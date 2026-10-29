@@ -85,7 +85,19 @@ public final class Tests {
         check(!Lineup.keyOf("ESPN 4").equals(Lineup.keyOf("ESPN")), "ESPN 4 is not ESPN");
         same(Lineup.keyOf("Globo Minas 4K"), Lineup.keyOf("GLOBO MINAS FHD"), "Globo Minas 4K and FHD");
         same(Lineup.norm("Ação & Aventura"), "acao e aventura", "norm takes accents out");
+        same(group("QUILOS MORTAIS 01", "OUTROS"), Lineup.H24, "a marathon channel is 24 horas");
+        same(group("UFCPASS 03 - 24H", "UFC"), Lineup.H24, "24H in the name");
+        same(group("Pesadelo na Cozinha", "CANAIS 24 HORAS"), Lineup.H24, "24 horas in the category");
+        same(group("Amazon Prime 01", "OUTROS"), Lineup.STREAMS, "a streaming service's live channel");
+        same(group("Disney+ 2", ""), Lineup.STREAMS, "Disney+ is a streaming channel");
+        same(group("Disney Channel", ""), Lineup.KIDS, "Disney Channel is still Infantil");
+        same(group("SporTV 2", "ESPORTES"), Lineup.SPORTS, "SporTV is Esportes");
+        same(group("Globo Minas", "ABERTOS"), Lineup.OPEN, "Globo is Abertos");
+        same(group("Telecine Action", ""), Lineup.MOVIES, "Telecine is Canais de filmes");
+        same(Lineup.groupFor("canais 24 horas"), Lineup.H24, "voice: canais 24 horas");
     }
+
+    private static String group(String raw, String category) { return Lineup.groupOf(Lineup.keyOf(raw), Lineup.norm(category)); }
 
     // A game is later, live (from 20 min before until 2 h 45 after its start) or finished.
     private static void games() {

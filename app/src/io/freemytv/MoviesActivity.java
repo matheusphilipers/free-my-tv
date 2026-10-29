@@ -1152,7 +1152,8 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
             boolean games = addGames(q);
             // A kind of title ("filmes de suspense", "séries de terror", "comédia dos anos 90"): titles of that kind,
             // with your settings, instead of looking for the words in names.
-            Ask ask = group == null && !games ? Ask.understand(q) : null;
+            // ("documentários", "infantil": the channels above, then the titles of that kind.)
+            Ask ask = !games ? Ask.understand(q) : null;
             if (ask != null) { askRows(ask, gen); return; }
             List<Lineup.Channel> chans = lineup == null || group != null ? new ArrayList<>() : lineup.search(q, 16);
             List<Iptv.Version> mine = iptv.search(q, 30);

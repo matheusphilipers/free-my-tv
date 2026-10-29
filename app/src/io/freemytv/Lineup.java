@@ -26,8 +26,9 @@ import java.util.regex.Pattern;
  */
 final class Lineup {
     static final String GAMES = "Jogos de hoje", OPEN = "Abertos", SPORTS = "Esportes", MOVIES = "Canais de filmes", SOAPS = "Novelas e realities",
-            NEWS = "Notícias", KIDS = "Infantil", DOCS = "Documentários", SHOWS = "Variedades", MUSIC = "Música", FAITH = "Religiosos", OTHER = "Outros";
-    static final String[] GROUPS = {GAMES, OPEN, SPORTS, MOVIES, SOAPS, NEWS, KIDS, DOCS, SHOWS, MUSIC, FAITH, OTHER};
+            NEWS = "Notícias", KIDS = "Infantil", DOCS = "Documentários", SHOWS = "Variedades", MUSIC = "Música", FAITH = "Religiosos", OTHER = "Outros",
+            H24 = "Canais 24 horas", STREAMS = "Streamings ao vivo", ADULT = "Adultos";
+    static final String[] GROUPS = {GAMES, OPEN, SPORTS, STREAMS, MOVIES, H24, SOAPS, NEWS, KIDS, DOCS, SHOWS, MUSIC, FAITH, ADULT, OTHER};
 
     /** One channel, with its sources (lists and qualities), best first. */
     static final int PRE = 0, LIVE = 1, ENDED = 2, ALWAYS = 3;
@@ -270,6 +271,8 @@ final class Lineup {
                 {KIDS, "infantil", "infantis", "desenhos", "desenho", "criancas", "crianca", "kids", "desenho animado"},
                 {DOCS, "documentarios", "documentario", "documentarios ao vivo"},
                 {SHOWS, "variedades"},
+                {H24, "24 horas", "24h", "canais 24 horas", "24 horas por dia", "maratona", "maratonas"},
+                {STREAMS, "streamings ao vivo", "streaming ao vivo", "streamings", "pay per view", "ppv"},
                 {MUSIC, "musica", "musicas", "clipes"},
                 {FAITH, "religiosos", "religioso", "gospel", "catolicos", "evangelicos"},
         };
@@ -518,8 +521,19 @@ final class Lineup {
     }
 
     /** Our group for a channel, from its name first, then the provider's category. */
+    // A show on a loop ("Quilos Mortais 01", "UFCPASS 03 - 24H", "Pesadelo na Cozinha 24h"): "24h", "24 horas", "24/7"
+    // in the name or the list's category, or a name numbered from 01 (the providers number each marathon's channels).
+    private static final Pattern LOOP = Pattern.compile("(^| )(24 ?h|24 ?hs|24 ?hrs|24 horas|24 7|maratona|maratonas)( |$)"),
+            NUMBERED = Pattern.compile(" 0[1-9]$");
+
     static String groupOf(String name, String category) {
         String n = " " + name + " ", c = " " + category + " ";
+        if (has(n, "adulto", "adultos", "adult", "xxx", "playboy", "sexy") || has(c, "adulto", "adultos", "adult", "xxx", "18")) return ADULT;
+        // The streaming services' own live channels (events, games): "Amazon Prime 01", "Disney+ 2", "HBO Max 3".
+        if (starts(n.trim(), "amazon prime", "prime video", "disney plus", "hbo max", "paramount plus", "apple tv", "dazn", "globoplay", "netflix",
+                "star plus", "max sports", "nba league pass", "nfl game pass")) return STREAMS;
+        if (LOOP.matcher(n.trim()).find() || LOOP.matcher(c.trim()).find() || (NUMBERED.matcher(n.trim()).find() && byWords(n.trim(), true) == null))
+            return H24;
         String g = byWords(n.trim(), true);
         if (g != null) return g;
         g = byWords(c.trim(), false);
