@@ -571,7 +571,9 @@ final class Iptv {
                 if (id == 0 || name.isEmpty()) continue;
                 if (kind.equals("live")) ext = "m3u8";
                 String category = cats.containsKey(cat) ? cats.get(cat) : "";
-                out.write(kind + "\t" + id + "\t" + clean(ext) + "\t" + digits(tmdb) + "\t" + clean(category) + "\t" + clean(name) + "\t" + clean(icon) + "\t" + clean(epg) + "\n");
+                out.write(kind + "\t" + id + "\t" + clean(ext) + "\t" + digits(tmdb) + "\t" + clean(category) + "\t" + clean(name) + "\t" + clean(icon) + "\t" + clean(epg));
+                if (!kind.equals("live")) out.write(parsed(clean(name), clean(category)));
+                out.write("\n");
                 n++;
             }
             r.endArray();
@@ -579,6 +581,15 @@ final class Iptv {
             c.disconnect();
         }
         return n;
+    }
+
+    /** A movie's or show's name read once, at download: title, year, quality, codec, audio (the TV doesn't redo it at every start). */
+    private static String parsed(String raw, String category) {
+        Version v = new Version();
+        v.raw = raw;
+        v.category = category;
+        parse(v);
+        return "\t" + v.title + "\t" + v.year + "\t" + v.quality + "\t" + v.codec + "\t" + v.audio;
     }
 
     private static String str(JsonReader r) throws IOException {
@@ -605,6 +616,7 @@ final class Iptv {
         boolean dub = preferDubbed();
         // Tens of thousands of lines repeat a few kinds, extensions and categories: one copy of each (less memory).
         Map<String, String> pool = new HashMap<>(1024);
+        boolean old = false;   // an index from before the names were read at download: read them now, and save them
         try (BufferedReader in = new BufferedReader(new InputStreamReader(new FileInputStream(f), StandardCharsets.UTF_8))) {
             String line;
             while ((line = in.readLine()) != null) {
@@ -622,7 +634,16 @@ final class Iptv {
                 if (p.length > 7) v.epg = p[7];
                 add(cats, one(pool, v.kind + "|" + v.category), v);
                 if (v.kind.equals("live")) continue;
-                parse(v);
+                if (p.length >= 13) {
+                    v.title = p[8];
+                    v.year = p[9];
+                    v.quality = p[10];
+                    v.codec = p[11];
+                    v.audio = p[12];
+                } else {
+                    parse(v);
+                    old = true;
+                }
                 v.quality = one(pool, v.quality);
                 v.codec = one(pool, v.codec);
                 v.audio = one(pool, v.audio);
@@ -637,6 +658,7 @@ final class Iptv {
         } catch (Exception e) {
             AppLog.w("iptv index: " + e.getMessage());
         }
+        if (old) upgrade(f);
         for (List<Version> l : idx.values()) sort(l);
         synchronized (this) {
             indexes.put(s.id, idx);
@@ -645,6 +667,29 @@ final class Iptv {
             generation++;
         }
         changed();
+    }
+
+    /** Adds the read names to an older index file, so the next start skips that work. */
+    private static void upgrade(File f) {
+        File tmp = new File(f.getPath() + ".up");
+        try (BufferedReader in = new BufferedReader(new InputStreamReader(new FileInputStream(f), StandardCharsets.UTF_8));
+             BufferedWriter out = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(tmp), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = in.readLine()) != null) {
+                String[] p = line.split("\t", -1);
+                out.write(line);
+                if (p.length >= 6 && p.length < 13 && !p[0].equals("live")) {
+                    for (int i = p.length; i < 8; i++) out.write('\t');
+                    out.write(parsed(p[5], p[4]));
+                }
+                out.write('\n');
+            }
+        } catch (Exception e) {
+            AppLog.w("iptv index upgrade: " + e.getMessage());
+            tmp.delete();
+            return;
+        }
+        if (!tmp.renameTo(f)) tmp.delete();
     }
 
     private static String one(Map<String, String> pool, String s) {
