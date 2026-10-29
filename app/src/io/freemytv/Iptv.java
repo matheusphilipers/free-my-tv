@@ -53,13 +53,13 @@ final class Iptv {
         int id;
         String name = "", server = "", user = "", pass = "", expires = "", error = "";
         int maxConnections, activeConnections;
-        long at;
+        long at, liveAt;   // when the whole catalog / the live channels (and today's games) were last downloaded
         int movies, shows, channels;
         volatile boolean loading;
 
         JSONObject json() throws Exception {
             return new JSONObject().put("id", id).put("name", name).put("server", server).put("user", user).put("pass", pass)
-                    .put("at", at).put("movies", movies).put("shows", shows).put("channels", channels).put("expires", expires);
+                    .put("at", at).put("liveAt", liveAt).put("movies", movies).put("shows", shows).put("channels", channels).put("expires", expires);
         }
 
         static Source from(JSONObject o) {
@@ -70,6 +70,7 @@ final class Iptv {
             s.user = o.optString("user");
             s.pass = o.optString("pass");
             s.at = o.optLong("at");
+            s.liveAt = o.optLong("liveAt", s.at);
             s.movies = o.optInt("movies");
             s.shows = o.optInt("shows");
             s.channels = o.optInt("channels");
@@ -123,7 +124,7 @@ final class Iptv {
     // When each list was last tried (a failed download waits a while before the next try) and the ones queued now.
     private final Map<Integer, Long> tried = new java.util.concurrent.ConcurrentHashMap<>();
     private final java.util.Set<Integer> queued = java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<>());
-    static final long DAY = 24 * 60 * 60_000L, RETRY = 30 * 60_000L;
+    static final long DAY = 24 * 60 * 60_000L, RETRY = 30 * 60_000L, LIVE_EVERY = 3 * 60 * 60_000L;
 
     static synchronized Iptv get(Context c) {
         if (instance == null) instance = new Iptv(c.getApplicationContext());
@@ -347,25 +348,30 @@ final class Iptv {
     }
 
     /**
-     * Downloads each list's catalog again when it's more than a day old (or `force`: the Atualizar button). A list
-     * whose download failed is tried again after half an hour, not on every screen opened.
+     * Keeps the lists current. The whole catalog (movies, shows, episodes, channels) once a day: the first time the
+     * TV is used on a new day, or on its own after midnight when it stays on. The live channels, where today's games
+     * are, also every 3 hours (a light download: only the channels). `force` (the Atualizar button): everything now.
+     * A list whose download failed is tried again after half an hour, not on every screen opened.
      */
     void refresh(boolean force) {
         long now = System.currentTimeMillis();
         for (Source s : sources()) {
             if (s.loading || queued.contains(s.id)) continue;
-            if (!force) {
-                // The index file, not the one in memory: right after the TV starts it's still being read.
-                boolean fresh = now - s.at < DAY && new File(context.getFilesDir(), "iptv-" + s.id + ".tsv").isFile();
-                Long last = tried.get(s.id);
-                if (fresh || (last != null && now - last < RETRY)) continue;
-            }
+            // The index file, not the one in memory: right after the TV starts it's still being read.
+            boolean have = new File(context.getFilesDir(), "iptv-" + s.id + ".tsv").isFile();
+            boolean full = force || !have || !sameDay(s.at, now) || now - s.at > DAY;
+            boolean live = !full && (!sameDay(s.liveAt, now) || now - s.liveAt > LIVE_EVERY);
+            if (!full && !live) continue;
+            Long last = tried.get(s.id);
+            if (!force && last != null && now - last < RETRY) continue;
             queued.add(s.id);
             tried.put(s.id, now);
+            AppLog.w("iptv " + s.name + ": " + (full ? "downloading the catalog" : "downloading the live channels"));
             io.execute(() -> {
                 try {
                     login(s);
-                    refreshIndex(s);
+                    if (full) refreshIndex(s); else refreshLive(s);
+                    tried.remove(s.id);
                 } catch (Exception e) {
                     s.error = message(e);
                     AppLog.w("iptv " + s.name + ": " + e.getMessage());
@@ -374,6 +380,47 @@ final class Iptv {
                     queued.remove(s.id);
                 }
             });
+        }
+    }
+
+    private static boolean sameDay(long a, long b) {
+        if (a <= 0) return false;
+        java.util.Calendar x = java.util.Calendar.getInstance(), y = java.util.Calendar.getInstance();
+        x.setTimeInMillis(a);
+        y.setTimeInMillis(b);
+        return x.get(java.util.Calendar.YEAR) == y.get(java.util.Calendar.YEAR) && x.get(java.util.Calendar.DAY_OF_YEAR) == y.get(java.util.Calendar.DAY_OF_YEAR);
+    }
+
+    /** Only the live channels again (today's games change during the day); the movies and shows stay as they are. */
+    private void refreshLive(Source s) throws Exception {
+        s.loading = true;
+        s.error = "";
+        changed();
+        File index = new File(context.getFilesDir(), "iptv-" + s.id + ".tsv"), tmp = new File(context.getFilesDir(), "iptv-" + s.id + ".tmp");
+        try {
+            List<String> liveOrder = new ArrayList<>();
+            Map<String, String> liveCats = categories(api(s, "get_live_categories"), liveOrder);
+            int channels;
+            try (BufferedWriter out = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(tmp), StandardCharsets.UTF_8))) {
+                // The movies and shows already on disk, as they are…
+                try (BufferedReader in = new BufferedReader(new InputStreamReader(new FileInputStream(index), StandardCharsets.UTF_8))) {
+                    String line;
+                    while ((line = in.readLine()) != null) if (!line.startsWith("live\t")) { out.write(line); out.write('\n'); }
+                }
+                // …and the channels as they are now.
+                channels = list(api(s, "get_live_streams"), "live", liveCats, out);
+            }
+            if (channels == 0) throw new IOException("A lista não mandou canais agora.");
+            if (!tmp.renameTo(index)) throw new IOException("index");
+            prefs.edit().putString("cats." + s.id + ".live", new JSONArray(liveOrder).toString()).apply();
+            s.channels = channels;
+            s.liveAt = System.currentTimeMillis();
+            save();
+            loadIndex(s);
+        } finally {
+            tmp.delete();
+            s.loading = false;
+            changed();
         }
     }
 
@@ -454,7 +501,7 @@ final class Iptv {
             s.movies = movies;
             s.shows = shows;
             s.channels = channels;
-            s.at = System.currentTimeMillis();
+            s.at = s.liveAt = System.currentTimeMillis();
             save();
             loadIndex(s);
         } finally {

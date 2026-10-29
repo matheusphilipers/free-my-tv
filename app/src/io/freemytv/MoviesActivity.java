@@ -1091,7 +1091,7 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
         private final LinearLayout results = ui.column();
         private int generation;
         private final Runnable run = this::run;
-        private final android.widget.EditText box = field("Digite o nome de um filme, série, ator ou canal…", "", false);
+        private final android.widget.EditText box = field("Um filme, série, ator, canal ou gênero (ex.: filmes de suspense)…", "", false);
 
         Search() {
             box.setInputType(android.text.InputType.TYPE_CLASS_TEXT);
@@ -1122,7 +1122,7 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
             results.setClipChildren(false);
             sv.addView(results);
             view.addView(sv, new LinearLayout.LayoutParams(MATCH, 0, 1));
-            results.addView(ui.text("Aperte o microfone do controle e fale, ou OK no campo para digitar.", 21, Ui.medium, ui.dim));
+            results.addView(ui.text("Aperte o microfone do controle e fale, ou OK no campo para digitar. Dá para pedir por nome (“Duna”, “Wagner Moura”, “SporTV”) ou por tipo: “filmes de suspense”, “séries de terror”, “comédia dos anos 90”, “ação brasileiro”, “lançamentos de ficção”, “documentários da Netflix”.", 21, Ui.medium, ui.dim));
         }
 
         void listenNow() {
@@ -1150,6 +1150,10 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
                         g.subList(0, Math.min(20, g.size())), group, () -> openLive(gname)));
             }
             boolean games = addGames(q);
+            // A kind of title ("filmes de suspense", "séries de terror", "comédia dos anos 90"): titles of that kind,
+            // with your settings, instead of looking for the words in names.
+            Ask ask = group == null && !games ? Ask.understand(q) : null;
+            if (ask != null) { askRows(ask, gen); return; }
             List<Lineup.Channel> chans = lineup == null || group != null ? new ArrayList<>() : lineup.search(q, 16);
             List<Iptv.Version> mine = iptv.search(q, 30);
             List<Iptv.Version> films = new ArrayList<>(), shows = new ArrayList<>();
@@ -1194,6 +1198,58 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
                     r.addView(ui.card(t, w, () -> TvUi.open(MoviesActivity.this, t)), ui.margins(w, WRAP, 0, 0, 24, 0));
                 }
                 results.addView(grid);
+            });
+        }
+
+        /** The results of a search by kind: your lists' own category, then what's on your lists, your streaming, the best rated. */
+        private void askRows(Ask a, int gen) {
+            Iptv iptv = Iptv.get(MoviesActivity.this);
+            String label = a.label();
+            int min = movies.minRating();
+            results.addView(ui.text("Entendi: " + label + (min > 0 ? " · nota " + min + "+" : "") + " · sem os gêneros que você evita",
+                    19, Ui.medium, ui.dim), ui.margins(WRAP, WRAP, 4, 0, 0, 10));
+            // The providers' own categories with that name ("SUSPENSE", "Filmes | Terror").
+            if (a.services.isEmpty() && iptv.connected()) {
+                for (String g : a.genres) {
+                    String word = Lineup.norm(Movies.genreName(g)).split(" ")[0];
+                    for (String kind : a.kinds()) {
+                        for (String[] c : iptv.mergedCategories(kind)) {
+                            if (!(" " + c[0] + " ").contains(" " + word)) continue;
+                            List<Iptv.Version> items = iptv.mergedCategory(kind, c[0]);
+                            if (items.isEmpty()) continue;
+                            iptvRow("Categoria “" + c[1] + "” das suas listas", items.subList(0, Math.min(40, items.size())));
+                            break;
+                        }
+                    }
+                }
+            }
+            TextView wait = ui.text("Procurando " + label.toLowerCase(Ui.locale()) + "…", 21, Ui.medium, ui.dim);
+            results.addView(wait, ui.margins(WRAP, WRAP, 4, 20, 0, 0));
+            movies.run(() -> {
+                List<Movies.Title> onLists = new ArrayList<>(), streaming = new ArrayList<>(), best = new ArrayList<>();
+                if (a.services.isEmpty()) {
+                    if (iptv.connected()) for (Movies.Title t : movies.ask(a, "lists")) if (iptv.has(t)) onLists.add(t);
+                    for (Movies.Title t : movies.ask(a, "best")) {
+                        boolean dup = false;
+                        for (Movies.Title x : onLists) if (x.id == t.id && x.kind.equals(t.kind)) { dup = true; break; }
+                        if (!dup) best.add(t);
+                    }
+                }
+                streaming.addAll(movies.ask(a, "streaming"));
+                return new Object[] {onLists, streaming, best};
+            }, got -> {
+                if (gen != generation) return;
+                results.removeView(wait);
+                if (got == null) {
+                    results.addView(ui.text("Não deu para buscar agora (sem internet ou sem a chave do TMDB).", 21, Ui.medium, ui.dim), ui.margins(WRAP, WRAP, 4, 20, 0, 0));
+                    return;
+                }
+                @SuppressWarnings("unchecked") List<Movies.Title> onLists = (List<Movies.Title>) got[0], streaming = (List<Movies.Title>) got[1], best = (List<Movies.Title>) got[2];
+                if (!onLists.isEmpty()) results.addView(posterRow(label + " nas suas listas", "dá para assistir agora", onLists, false));
+                if (!streaming.isEmpty()) results.addView(posterRow(label + " no seu streaming", a.services.isEmpty() ? "nos serviços que você assina" : "", streaming, false));
+                if (!best.isEmpty()) results.addView(posterRow("Mais " + label.toLowerCase(Ui.locale()) + " bem avaliados", "veja onde assistir nos detalhes", best, false));
+                if (onLists.isEmpty() && streaming.isEmpty() && best.isEmpty())
+                    results.addView(ui.text("Nada de " + label.toLowerCase(Ui.locale()) + " com nota " + min + "+. Dá para baixar a nota mínima em Ajustes.", 21, Ui.medium, ui.dim), ui.margins(WRAP, WRAP, 4, 20, 0, 0));
             });
         }
 

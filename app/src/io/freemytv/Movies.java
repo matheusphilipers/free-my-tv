@@ -476,6 +476,8 @@ final class Movies {
         final List<String> services = new ArrayList<>();
         int minRating, fromYear, toYear, minVotes = 50, page = 1;
         boolean mine, national;
+        /** Everywhere, not only what streams in Brazil (to find what your IPTV lists have). */
+        boolean anywhere;
         String sort = "popularity.desc";
 
         Filter popular() { sort = "popularity.desc"; mine = false; minVotes = 20; return this; }
@@ -483,8 +485,10 @@ final class Movies {
 
     /** One page (20) of movies or shows matching the filter, in Brazil. */
     List<Title> discover(String kind, Filter f) throws Exception {
-        StringBuilder q = new StringBuilder("/discover/").append(kind).append("?language=pt-BR&watch_region=BR&include_adult=false")
-                .append("&with_watch_monetization_types=flatrate&sort_by=").append(f.sort).append("&page=").append(f.page);
+        StringBuilder q = new StringBuilder("/discover/").append(kind).append("?language=pt-BR&include_adult=false")
+                .append(f.anywhere && !f.mine ? "" : "&watch_region=BR&with_watch_monetization_types=flatrate")
+                .append("&sort_by=").append(f.sort).append("&page=").append(f.page);
+        if (kind.equals("tv")) q.append(f.genres.isEmpty() ? "&without_genres=10767,10763" : "");   // no talk shows or news
         if (!f.genres.isEmpty()) {
             StringBuilder g = new StringBuilder();
             for (String key : f.genres) {
@@ -514,6 +518,38 @@ final class Movies {
         JSONObject o = get(q.toString());
         lastTotal = o.optInt("total_results");
         return titles(o.optJSONArray("results"), kind);
+    }
+
+    /**
+     * A search by kind of title (Ask: "filmes de suspense"). `where`: "lists" (popular and best rated anywhere, for
+     * what your IPTV lists have), "streaming" (your services) or "best" (best rated anywhere). Movies and shows
+     * alternate when both were asked; each title once.
+     */
+    List<Title> ask(Ask a, String where) throws Exception {
+        List<List<Title>> byKind = new ArrayList<>();
+        for (String kind : a.kinds()) {
+            List<Title> got = new ArrayList<>();
+            String[] sorts = where.equals("lists") ? new String[] {"popularity.desc", "popularity.desc", "popularity.desc", "vote_average.desc", "vote_average.desc"}
+                    : where.equals("best") ? new String[] {"vote_average.desc", "vote_average.desc"} : new String[] {a.best ? "vote_average.desc" : "popularity.desc", "popularity.desc"};
+            int popularPage = 0, bestPage = 0;
+            for (String sort : sorts) {
+                Filter f = a.filter(minRating());
+                f.sort = sort;
+                f.page = sort.startsWith("vote") ? ++bestPage : ++popularPage;
+                if (sort.startsWith("vote")) f.minVotes = Math.max(f.minVotes, a.national ? 60 : kind.equals("tv") ? 300 : 800);
+                if (a.recent && sort.startsWith("vote")) f.minVotes = 60;
+                f.mine = where.equals("streaming");
+                f.anywhere = !f.mine;
+                for (Title t : discover(kind, f)) {
+                    boolean seen = false;
+                    for (Title x : got) if (x.id == t.id) { seen = true; break; }
+                    if (!seen) got.add(t);
+                }
+            }
+            byKind.add(got);
+        }
+        if (byKind.isEmpty()) return new ArrayList<>();
+        return byKind.size() == 1 ? byKind.get(0) : merge(byKind.get(0), byKind.get(1));
     }
 
     /** total_results of the last discover() (for "1.234 títulos"). */
@@ -595,11 +631,75 @@ final class Movies {
     private final Map<String, String> translations = new HashMap<>();
 
     /**
-     * English to Portuguese with MyMemory's free service (no key; about 500 characters a request, so long reviews are
-     * translated in pieces, up to ~1500 characters). Null if it can't.
+     * A review in English, in Brazilian Portuguese: Google's free translator first (whole reviews), MyMemory if that
+     * fails. Each translation is kept on the TV, so a review is translated once. Null if neither answers.
      */
     String translate(String text) {
         synchronized (translations) { if (translations.containsKey(text)) return translations.get(text); }
+        android.content.SharedPreferences kept = context.getSharedPreferences("translations", Context.MODE_PRIVATE);
+        String key = Integer.toHexString(text.hashCode()) + "_" + text.length();
+        String result = kept.getString(key, null);
+        if (result == null) {
+            result = google(text);
+            if (result == null || result.isEmpty()) result = myMemory(text);
+            if (result == null || result.isEmpty()) return null;
+            android.content.SharedPreferences.Editor e = kept.edit();
+            if (kept.getAll().size() > 400) e.clear();   // a few hundred reviews at most
+            e.putString(key, result).apply();
+        }
+        synchronized (translations) { translations.put(text, result); }
+        return result;
+    }
+
+    /** Google's free web translator (no key), in pieces of up to ~1800 characters. */
+    private static String google(String text) {
+        StringBuilder out = new StringBuilder();
+        try {
+            String rest = text.length() > 5000 ? text.substring(0, 5000) : text;
+            while (!rest.isEmpty()) {
+                int cut = rest.length() <= 1800 ? rest.length() : Math.max(rest.lastIndexOf(". ", 1800) + 1, rest.lastIndexOf(' ', 1800));
+                if (cut <= 0) cut = Math.min(1800, rest.length());
+                String piece = rest.substring(0, cut);
+                rest = rest.substring(cut).trim();
+                HttpURLConnection c = (HttpURLConnection) new URL("https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=pt-BR&dt=t&q="
+                        + URLEncoder.encode(piece, "UTF-8")).openConnection();
+                c.setConnectTimeout(8000);
+                c.setReadTimeout(10000);
+                c.setRequestProperty("User-Agent", "Mozilla/5.0");
+                try {
+                    if (c.getResponseCode() != 200) return null;
+                    ByteArrayOutputStream b = new ByteArrayOutputStream();
+                    try (InputStream in = c.getInputStream()) {
+                        byte[] buf = new byte[8192];
+                        int n;
+                        while ((n = in.read(buf)) > 0 && b.size() < 200_000) b.write(buf, 0, n);
+                    }
+                    // [[["tradução","original",...],["…","…"]], null, "en", ...]
+                    JSONArray parts = new JSONArray(b.toString(StandardCharsets.UTF_8.name())).optJSONArray(0);
+                    StringBuilder t = new StringBuilder();
+                    for (int i = 0; parts != null && i < parts.length(); i++) {
+                        JSONArray p = parts.optJSONArray(i);
+                        if (p != null && !p.isNull(0)) t.append(p.optString(0));
+                    }
+                    if (t.length() == 0) return null;
+                    out.append(out.length() == 0 ? "" : " ").append(t.toString().trim());
+                } finally {
+                    c.disconnect();
+                }
+            }
+            if (text.length() > 5000) out.append(" …");
+            return out.toString();
+        } catch (Exception e) {
+            AppLog.w("translate google: " + e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * The fallback: English to Portuguese with MyMemory's free service (no key; about 500 characters a request, so long reviews are
+     * translated in pieces, up to ~1500 characters). Null if it can't.
+     */
+    private String myMemory(String text) {
         StringBuilder out = new StringBuilder();
         try {
             String rest = text.length() > 1500 ? text.substring(0, 1500) : text;
@@ -630,9 +730,7 @@ final class Movies {
             AppLog.w("translate: " + e.getMessage());
             return null;
         }
-        String result = android.text.Html.fromHtml(out.toString(), android.text.Html.FROM_HTML_MODE_LEGACY).toString();
-        synchronized (translations) { translations.put(text, result); }
-        return result;
+        return android.text.Html.fromHtml(out.toString(), android.text.Html.FROM_HTML_MODE_LEGACY).toString();
     }
 
     /** What's popular on Brazil's streaming services this week (movies or shows). */
