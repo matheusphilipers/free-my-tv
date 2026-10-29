@@ -115,7 +115,15 @@ final class Iptv {
     private final List<Listener> listeners = new ArrayList<>();
     private final List<Source> sources = new ArrayList<>();
     // Per list: the index by TMDB number and by "name year" / "name", and what's in each of its categories.
-    private final Map<Integer, Map<String, List<Version>>> indexes = new HashMap<>(), categories = new HashMap<>();
+    // Read from the screens while the catalog thread replaces them: concurrent maps.
+    private final Map<Integer, Map<String, List<Version>>> indexes = new java.util.concurrent.ConcurrentHashMap<>(),
+            categories = new java.util.concurrent.ConcurrentHashMap<>();
+    // Each list's category order ("cats.<id>.<kind>" in the settings), parsed once.
+    private final Map<String, List<String>> order = new java.util.concurrent.ConcurrentHashMap<>();
+    // When each list was last tried (a failed download waits a while before the next try) and the ones queued now.
+    private final Map<Integer, Long> tried = new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.Set<Integer> queued = java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<>());
+    static final long DAY = 24 * 60 * 60_000L, RETRY = 30 * 60_000L;
 
     static synchronized Iptv get(Context c) {
         if (instance == null) instance = new Iptv(c.getApplicationContext());
@@ -147,7 +155,18 @@ final class Iptv {
         AppLog.w("iptv: " + sources.size() + " lists saved (" + prefs.getString("sources", "").length() + " chars); index files: "
                 + (idx == null ? 0 : idx.length) + " · process " + android.app.Application.getProcessName());
         io.execute(() -> { for (Source s : sources()) loadIndex(s); changed(); });
+        // Once a day: the first time the TV is on after 24 h (refresh below, from the home screen), and on its own
+        // while it stays on (this check, every hour).
+        main.postDelayed(daily, 60 * 60_000L);
+        main.post(() -> refresh(false));
     }
+
+    private final Runnable daily = new Runnable() {
+        @Override public void run() {
+            refresh(false);
+            main.postDelayed(this, 60 * 60_000L);
+        }
+    };
 
     void addListener(Listener l) { if (!listeners.contains(l)) listeners.add(l); }
     void removeListener(Listener l) { listeners.remove(l); }
@@ -294,6 +313,7 @@ final class Iptv {
      */
     void remove(Source s) {
         synchronized (this) { sources.remove(s); }
+        forgetOrder(s.id);
         indexes.remove(s.id);
         categories.remove(s.id);
         generation++;
@@ -326,11 +346,22 @@ final class Iptv {
         changed();
     }
 
-    /** Downloads each list's catalog again if it's more than a day old (or `force`). */
+    /**
+     * Downloads each list's catalog again when it's more than a day old (or `force`: the Atualizar button). A list
+     * whose download failed is tried again after half an hour, not on every screen opened.
+     */
     void refresh(boolean force) {
+        long now = System.currentTimeMillis();
         for (Source s : sources()) {
-            if (s.loading) continue;
-            if (!force && System.currentTimeMillis() - s.at < 24 * 60 * 60_000L && categories.containsKey(s.id)) continue;
+            if (s.loading || queued.contains(s.id)) continue;
+            if (!force) {
+                // The index file, not the one in memory: right after the TV starts it's still being read.
+                boolean fresh = now - s.at < DAY && new File(context.getFilesDir(), "iptv-" + s.id + ".tsv").isFile();
+                Long last = tried.get(s.id);
+                if (fresh || (last != null && now - last < RETRY)) continue;
+            }
+            queued.add(s.id);
+            tried.put(s.id, now);
             io.execute(() -> {
                 try {
                     login(s);
@@ -339,13 +370,15 @@ final class Iptv {
                     s.error = message(e);
                     AppLog.w("iptv " + s.name + ": " + e.getMessage());
                     changed();
+                } finally {
+                    queued.remove(s.id);
                 }
             });
         }
     }
 
     private static String message(Exception e) {
-        String m = e.getMessage();
+        String m = AppLog.redact(e.getMessage());
         if (e instanceof java.net.UnknownHostException) return "Servidor não encontrado. Confira o endereço.";
         if (e instanceof java.net.SocketTimeoutException || e instanceof java.net.ConnectException) return "O servidor não respondeu. Tente de novo.";
         return m == null || m.isEmpty() ? "Não deu para conectar." : m;
@@ -417,6 +450,7 @@ final class Iptv {
             prefs.edit().putString("cats." + s.id + ".movie", new JSONArray(vodOrder).toString())
                     .putString("cats." + s.id + ".tv", new JSONArray(seriesOrder).toString())
                     .putString("cats." + s.id + ".live", new JSONArray(liveOrder).toString()).apply();
+            forgetOrder(s.id);
             s.movies = movies;
             s.shows = shows;
             s.channels = channels;
@@ -506,6 +540,8 @@ final class Iptv {
         if (!f.isFile()) return;
         Map<String, List<Version>> idx = new HashMap<>(32768), cats = new HashMap<>(512);
         boolean dub = preferDubbed();
+        // Tens of thousands of lines repeat a few kinds, extensions and categories: one copy of each (less memory).
+        Map<String, String> pool = new HashMap<>(1024);
         try (BufferedReader in = new BufferedReader(new InputStreamReader(new FileInputStream(f), StandardCharsets.UTF_8))) {
             String line;
             while ((line = in.readLine()) != null) {
@@ -513,17 +549,21 @@ final class Iptv {
                 if (p.length < 6 || !isNumber(p[1])) continue;
                 Version v = new Version();
                 v.source = s;
-                v.kind = p[0];
+                v.kind = one(pool, p[0]);
                 v.id = Integer.parseInt(p[1]);
-                v.ext = p[2].isEmpty() ? "mp4" : p[2];
+                v.ext = p[2].isEmpty() ? "mp4" : one(pool, p[2]);
                 v.tmdb = isNumber(p[3]) ? Integer.parseInt(p[3]) : 0;
-                v.category = p[4];
+                v.category = one(pool, p[4]);
                 v.raw = p[5];
                 if (p.length > 6) v.icon = p[6];
                 if (p.length > 7) v.epg = p[7];
-                add(cats, v.kind + "|" + v.category, v);
+                add(cats, one(pool, v.kind + "|" + v.category), v);
                 if (v.kind.equals("live")) continue;
                 parse(v);
+                v.quality = one(pool, v.quality);
+                v.codec = one(pool, v.codec);
+                v.audio = one(pool, v.audio);
+                v.year = one(pool, v.year);
                 score(v, dub);
                 if (v.tmdb > 0) add(idx, v.kind + "#" + v.tmdb, v);
                 if (!v.title.isEmpty()) {
@@ -538,9 +578,17 @@ final class Iptv {
         synchronized (this) {
             indexes.put(s.id, idx);
             categories.put(s.id, cats);
+            forgetOrder(s.id);
             generation++;
         }
         changed();
+    }
+
+    private static String one(Map<String, String> pool, String s) {
+        String had = pool.get(s);
+        if (had != null) return had;
+        pool.put(s, s);
+        return s;
     }
 
     private static boolean isNumber(String s) {
@@ -562,9 +610,12 @@ final class Iptv {
     private synchronized void rescoreAll() {
         boolean dub = preferDubbed();
         for (Map<String, List<Version>> idx : indexes.values()) {
-            for (List<Version> l : idx.values()) {
-                for (Version v : l) score(v, dub);
+            for (Map.Entry<String, List<Version>> e : idx.entrySet()) {
+                for (Version v : e.getValue()) score(v, dub);
+                // A sorted copy: a screen may be going through the old list right now.
+                List<Version> l = new ArrayList<>(e.getValue());
                 sort(l);
+                e.setValue(l);
             }
         }
     }
@@ -574,13 +625,22 @@ final class Iptv {
     /** A list's categories ("movie", "tv" or "live") that have something, in its order. */
     List<String> categories(Source s, String kind) {
         Map<String, List<Version>> cats = categories.get(s.id);
-        List<String> out = new ArrayList<>();
-        if (cats == null) return out;
-        try {
-            JSONArray a = new JSONArray(prefs.getString("cats." + s.id + "." + kind, "[]"));
-            for (int i = 0; i < a.length(); i++) if (cats.containsKey(kind + "|" + a.getString(i))) out.add(a.getString(i));
-        } catch (Exception ignored) {}
-        return out;
+        if (cats == null) return new ArrayList<>();
+        String key = s.id + "." + kind;
+        List<String> known = order.get(key);
+        if (known == null) {
+            known = new ArrayList<>();
+            try {
+                JSONArray a = new JSONArray(prefs.getString("cats." + key, "[]"));
+                for (int i = 0; i < a.length(); i++) if (cats.containsKey(kind + "|" + a.getString(i))) known.add(a.getString(i));
+            } catch (Exception ignored) {}
+            order.put(key, known);
+        }
+        return new ArrayList<>(known);
+    }
+
+    private void forgetOrder(int id) {
+        for (String k : new ArrayList<>(order.keySet())) if (k.startsWith(id + ".")) order.remove(k);
     }
 
     /** What's in a category, in the provider's order; movies and shows posted several times come once (their best version). */
@@ -644,10 +704,13 @@ final class Iptv {
         return s.replaceAll("\\s+", " ").replaceAll("[\\s\\-|]+$", "").trim();
     }
 
-    List<Program> guide(Version channel) {
+    List<Program> guide(Version channel) { return guide(channel, 4); }
+
+    /** The next `limit` programs on a channel (from now). */
+    List<Program> guide(Version channel, int limit) {
         List<Program> out = new ArrayList<>();
         try {
-            JSONObject o = new JSONObject(text(api(channel.source, "get_short_epg&stream_id=" + channel.id + "&limit=4")));
+            JSONObject o = new JSONObject(text(api(channel.source, "get_short_epg&stream_id=" + channel.id + "&limit=" + limit)));
             JSONArray a = o.optJSONArray("epg_listings");
             for (int i = 0; a != null && i < a.length(); i++) {
                 JSONObject e = a.getJSONObject(i);
@@ -922,7 +985,12 @@ final class Iptv {
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             byte[] buf = new byte[16384];
             int n;
-            while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+            while ((n = in.read(buf)) > 0) {
+                out.write(buf, 0, n);
+                // Answers read whole are small (an account, categories, a guide, a show's episodes): a server that
+                // keeps sending isn't allowed to fill the memory.
+                if (out.size() > 24 * 1024 * 1024) throw new IOException("Resposta grande demais do servidor.");
+            }
             return out.toString(StandardCharsets.UTF_8.name());
         } finally {
             c.disconnect();

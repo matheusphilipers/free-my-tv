@@ -72,7 +72,12 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
         for (Object[] n : names) {
             final int id = (Integer) n[1];
             TvUi.Chip c = ui.new Chip((String) n[0], 22, false);
-            c.setOnFocusChangeListener((v, f) -> { c.paint(); if (f) show(id); });
+            // Only the arrows change the tab: when the focused view disappears (a button that removes itself),
+            // Android hands the focus to the first tab, and that mustn't open Buscar.
+            c.setOnFocusChangeListener((v, f) -> {
+                c.paint();
+                if (f && (tab == -1 || android.os.SystemClock.uptimeMillis() - keyAt < 600)) show(id);
+            });
             tabs.add(c);
             tabIds.add(id);
             tabBar.addView(c, ui.margins(WRAP, WRAP, 0, 0, 10, 0));
@@ -1329,11 +1334,14 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
     @Override public void voiceSearch() {
         if (tab == T_LIVE && live != null) { Voice.listen(this, live::search); return; }   // on Ao vivo: channels
         int at = tabIds.indexOf(T_SEARCH);
-        if (tab != T_SEARCH && at >= 0) tabs.get(at).requestFocus();   // focusing the tab shows it
+        if (tab != T_SEARCH && at >= 0) { show(T_SEARCH); tabs.get(at).requestFocus(); }
         if (search != null) search.listenNow();
     }
 
+    private long keyAt;
+
     @Override public boolean dispatchKeyEvent(android.view.KeyEvent e) {
+        keyAt = android.os.SystemClock.uptimeMillis();
         if (Voice.isMicKey(e.getKeyCode()) && !Voice.listening()) {
             if (e.getAction() == android.view.KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0) {
                 AppLog.w("voice: mic key " + e.getKeyCode());
@@ -1358,6 +1366,7 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
         if (at < 0) return;
         if (tab == T_LIVE && live != null) { live.open(group); return; }
         getIntent().putExtra("group", group);
+        show(T_LIVE);
         tabs.get(at).requestFocus();
         if (live != null) live.open(group);
     }

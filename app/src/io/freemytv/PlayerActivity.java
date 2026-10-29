@@ -49,9 +49,10 @@ import static io.freemytv.TvUi.WRAP;
 /**
  * Our player for the IPTV lists, on Google's Media3 (ExoPlayer): it opens the stream formats IPTV servers send (HLS,
  * MPEG-TS, MKV, MP4), follows their redirects, keeps a bigger buffer for 4K, and switches audio and subtitles.
- * Films: OK pauses, ← → jump 10 s (held, faster), ▼ (or MENU) opens the tools bar (audio and subtitles, start over, next).
- * Live: ← → and CH± change channel, OK opens the channel list, ▲ what's on, ▼ (or MENU) the tools bar (source, audio
- * and subtitles, favourite, mosaic, guide). BACK closes what's open, then leaves.
+ * Films: OK pauses, ← → jump 10 s (held, faster). Live: ← → and CH± change channel, OK shows what's on, holding OK
+ * chooses the source. Under the time bar, always in sight with it, a row of buttons that ▼ (or MENU) goes into:
+ * live, Canais, Fonte, Áudio e legendas, Favoritar, Mosaico, Programação; films, audio and subtitles, start over, next.
+ * BACK closes what's open, then leaves.
  * It remembers where you stopped (Continue watching on the home screen) and, in a show, plays the next episode.
  * Extras: "url", "title", "subtitle", "key" (what to remember it by), "image", "kind", "tmdb", "next" (JSON of the
  * episodes that follow: url, title, subtitle, key); or, for live TV, "channels" (JSON: url, ts, title) and "index".
@@ -63,7 +64,7 @@ public class PlayerActivity extends Activity implements Player.Listener {
     private FrameLayout stage;
     private LinearLayout overlay, panel, tools, chanList;
     private android.widget.ScrollView chanScroll;
-    private TextView title, sub, clock, left, status, caption, center, nextCard, quality, nowNext, hint;
+    private TextView title, sub, clock, left, status, caption, center, nextCard, quality, nowNext;
     private Bar bar;
     private ProgressBar spinner;
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -163,16 +164,25 @@ public class PlayerActivity extends Activity implements Player.Listener {
         left = ui.text("", 24, Ui.semibold, 0xB3FFFFFF);
         row.addView(left);
         overlay.addView(row, ui.margins(MATCH, WRAP, 0, 6, 0, 0));
-        hint = ui.text(getIntent().getStringExtra("channels") != null ? "◀ ▶ troca de canal  ·  OK lista de canais  ·  ▲ o que está passando  ·  ▼ fonte, áudio e mais"
-                : "OK pausa  ·  ◀ ▶ 10 s  ·  ▼ áudio, legendas e mais", 17, Ui.medium, 0x80FFFFFF);
-        overlay.addView(hint, ui.margins(WRAP, WRAP, 0, 18, 0, 0));
-        // ▼: the tools, a row of buttons where the hint was.
+        // The buttons, always in sight with the time bar (▼ goes into them), and the remote's keys under them.
         tools = ui.row();
-        tools.setVisibility(View.GONE);
         tools.setClipChildren(false);
         tools.setClipToPadding(false);
-        tools.setPadding(0, ui.px(6), 0, ui.px(6));
-        overlay.addView(tools, ui.margins(MATCH, WRAP, 0, 14, 0, 0));
+        tools.setPadding(0, ui.px(8), 0, ui.px(8));
+        overlay.addView(tools, ui.margins(MATCH, WRAP, 0, 18, 0, 0));
+        boolean liveTv0 = getIntent().getStringExtra("channels") != null;
+        LinearLayout keys = ui.row();
+        String[][] legend = liveTv0
+                ? new String[][] {{"◀ ▶", "Trocar de canal"}, {"OK", "O que está passando"}, {"Segure OK", "Trocar a fonte"}, {"▼", "Botões"}}
+                : new String[][] {{"OK", "Pausar"}, {"◀ ▶", "10 segundos"}, {"▼", "Botões"}};
+        for (String[] k : legend) {
+            TextView cap = ui.text(k[0], 16, Ui.semibold, 0xFF1C1C1E);
+            cap.setPadding(ui.px(10), ui.px(4), ui.px(10), ui.px(4));
+            cap.setBackground(TvUi.round(0xE6FFFFFF, 8 * ui.k));
+            keys.addView(cap);
+            keys.addView(ui.text(k[1], 17, Ui.medium, 0xCCFFFFFF), ui.margins(WRAP, WRAP, 10, 0, 28, 0));
+        }
+        overlay.addView(keys, ui.margins(WRAP, WRAP, 0, 14, 0, 0));
         root.addView(overlay, new FrameLayout.LayoutParams(MATCH, MATCH));
         nextCard = ui.text("", 21, Ui.semibold, 0xFF1C1C1E);
         nextCard.setPadding(ui.px(24), ui.px(18), ui.px(24), ui.px(18));
@@ -281,7 +291,11 @@ public class PlayerActivity extends Activity implements Player.Listener {
         final int at = channel;
         final int many = guideCount;
         Lineup.Channel ch = lineupChannel();
-        if (ch == null) return;
+        if (ch == null) {
+            // The lineup is still being built (the player opened before it): once it's ready, try again.
+            if (channels != null && Lineup.ready(this) == null) withLineup(l -> { if (at == channel) handler.post(guideRun); });
+            return;
+        }
         Iptv iptv = Iptv.get(this);
         Movies.get(this).run(() -> {
             for (Iptv.Version v : ch.versions) {
@@ -336,6 +350,7 @@ public class PlayerActivity extends Activity implements Player.Listener {
         url = ch.optString("ts");
         sub.setText(liveSubtitle().toUpperCase(Locale.ROOT));
         updateSourcePill();
+        if (!inTools) buildTools();   // "Fonte: …" names the new one
         status.setText(why);
         spinner.setVisibility(View.VISIBLE);
         player.stop();
@@ -360,6 +375,7 @@ public class PlayerActivity extends Activity implements Player.Listener {
         retries = 0;
         attempts = 0;
         open(url);
+        buildTools();
         showOverlay();
         handler.removeCallbacks(tick);
         handler.post(tick);
@@ -386,6 +402,11 @@ public class PlayerActivity extends Activity implements Player.Listener {
             }
             if (!resumed) {
                 resumed = true;
+                // A movie or show from My list that started playing moves to Continue watching.
+                if (channels == null) {
+                    Intent in = getIntent();
+                    if (Movies.get(this).watching(in.getStringExtra("kind"), in.getIntExtra("tmdb", 0))) AppLog.w("player: left My list (watching)");
+                }
                 long at = channels != null ? 0 : Resume.position(this, key);
                 long dur = player.getDuration();
                 if (at > 0 && dur != C.TIME_UNSET && at < dur - 60_000) player.seekTo(at);
@@ -546,8 +567,10 @@ public class PlayerActivity extends Activity implements Player.Listener {
 
     /** Something open that takes the arrows (audio panel, tools bar, channel list, a sheet). */
     private boolean busy() {
-        return panel.getVisibility() == View.VISIBLE || tools.getVisibility() == View.VISIBLE || chanScroll.getVisibility() == View.VISIBLE || Watch.isOpen(this);
+        return panel.getVisibility() == View.VISIBLE || inTools || chanScroll.getVisibility() == View.VISIBLE || Watch.isOpen(this);
     }
+
+    private boolean inTools, longPress;
 
     private void showOverlay() {
         overlay.animate().alpha(1).setDuration(150).start();
@@ -567,20 +590,24 @@ public class PlayerActivity extends Activity implements Player.Listener {
             if (Watch.isOpen(this)) return super.onKeyDown(code, e);
             if (panel.getVisibility() == View.VISIBLE) { panel.setVisibility(View.GONE); return true; }
             if (chanScroll.getVisibility() == View.VISIBLE) { closeList(); return true; }
-            if (tools.getVisibility() == View.VISIBLE) { closeTools(); return true; }
+            if (inTools) { closeTools(); return true; }
             save();
             finish();
             return true;
         }
         if (busy()) {
-            // ▲ from the tools bar closes it.
-            if (code == KeyEvent.KEYCODE_DPAD_UP && tools.getVisibility() == View.VISIBLE && panel.getVisibility() != View.VISIBLE && !Watch.isOpen(this)) { closeTools(); return true; }
-            if (code == KeyEvent.KEYCODE_MENU && tools.getVisibility() == View.VISIBLE) { closeTools(); return true; }
+            // ▲ from the buttons leaves them.
+            if (code == KeyEvent.KEYCODE_DPAD_UP && inTools && panel.getVisibility() != View.VISIBLE && !Watch.isOpen(this)) { closeTools(); return true; }
+            if (code == KeyEvent.KEYCODE_MENU && inTools) { closeTools(); return true; }
             return super.onKeyDown(code, e);
         }
         switch (code) {
             case KeyEvent.KEYCODE_DPAD_CENTER: case KeyEvent.KEYCODE_ENTER:
-                if (live) { if (e.getRepeatCount() == 0) openList(); return true; }
+                // Live: a press shows what's on (on release), holding it chooses the source.
+                if (live) {
+                    if (e.getRepeatCount() == 0) { longPress = false; e.startTracking(); }
+                    return true;
+                }
                 togglePause();
                 return true;
             case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:
@@ -620,6 +647,49 @@ public class PlayerActivity extends Activity implements Player.Listener {
         return super.onKeyDown(code, e);
     }
 
+    @Override public boolean onKeyLongPress(int code, KeyEvent e) {
+        if (channels != null && (code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER) && !busy()) {
+            longPress = true;
+            chooseSource();
+            return true;
+        }
+        return super.onKeyLongPress(code, e);
+    }
+
+    @Override public boolean onKeyUp(int code, KeyEvent e) {
+        if (channels != null && (code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER) && e.isTracking() && !e.isCanceled()) {
+            if (!longPress && !busy()) showInfo();
+            longPress = false;
+            return true;
+        }
+        return super.onKeyUp(code, e);
+    }
+
+    /** What's on now and next, with the time bar and the buttons. */
+    private void showInfo() {
+        guideCount = 3;
+        handler.removeCallbacks(guideRun);
+        guideRun.run();
+        guideCount = 2;
+        overlay.animate().alpha(1).setDuration(150).start();
+        handler.removeCallbacks(hide);
+        handler.postDelayed(hide, 7000);
+    }
+
+    /** The channel's sources (holding OK, or the Fonte button). */
+    private void chooseSource() {
+        JSONObject ch = channels.optJSONObject(channel);
+        JSONArray a = alts();
+        if (a == null || a.length() < 2) {
+            android.widget.Toast.makeText(this, "Este canal tem uma fonte só.", android.widget.Toast.LENGTH_SHORT).show();
+            return;
+        }
+        ChannelMenu.sources(this, ch.optString("title"), a, alt, k -> {
+            Lineup.remember(this, ch.optString("key"), a.optJSONObject(k).optString("pick"));
+            switchAlt(k, "");
+        });
+    }
+
     private void togglePause() {
         if (player.isPlaying()) { player.pause(); flash("❚❚"); } else { player.play(); flash("▶"); }
         showOverlay();
@@ -627,57 +697,54 @@ public class PlayerActivity extends Activity implements Player.Listener {
 
     // MARK: - Tools bar (▼)
 
-    private void openTools() {
+    /** The row of buttons under the time bar: shown with it, reached with ▼. */
+    private void buildTools() {
         tools.removeAllViews();
-        View first = null;
         if (channels != null) {
             JSONObject ch = channels.optJSONObject(channel);
+            tool("☰  Canais", () -> { closeTools(); openList(); });
             JSONArray a = alts();
-            if (a != null && a.length() > 1) {
-                first = tool("☰  Fonte: " + a.optJSONObject(Math.min(alt, a.length() - 1)).optString("label"), () -> {
-                    closeTools();
-                    ChannelMenu.sources(this, ch.optString("title"), a, alt, k -> {
-                        Lineup.remember(this, ch.optString("key"), a.optJSONObject(k).optString("pick"));
-                        switchAlt(k, "");
-                    });
-                });
-            }
-            View audio = tool("Áudio e legendas", () -> { closeTools(); openPanel(); });
-            if (first == null) first = audio;
-            Lineup.Channel lc = lineupChannel();
-            Lineup l = Lineup.ready(this);
-            if (lc != null && l != null) {
-                TvUi.Chip[] fav = new TvUi.Chip[1];
-                fav[0] = tool(l.favourite(lc) ? "★  Favorito" : "☆  Favoritar", () -> {
-                    l.toggleFavourite(lc);
-                    fav[0].setText(l.favourite(lc) ? "★  Favorito" : "☆  Favoritar");
-                });
-            }
+            if (a != null && a.length() > 1) tool("Fonte: " + a.optJSONObject(Math.min(alt, a.length() - 1)).optString("label"), () -> { closeTools(); chooseSource(); });
+            tool("Áudio e legendas", () -> { closeTools(); openPanel(); });
+            TvUi.Chip[] fav = new TvUi.Chip[1];
+            fav[0] = tool("☆  Favoritar", () -> withLineup(l -> {
+                Lineup.Channel lc = l.find(ch.optString("key"));
+                if (lc == null) return;
+                l.toggleFavourite(lc);
+                fav[0].setText(l.favourite(lc) ? "★  Favorito" : "☆  Favoritar");
+            }));
+            withLineup(l -> {
+                Lineup.Channel lc = l.find(ch.optString("key"));
+                if (lc != null && l.favourite(lc)) fav[0].setText("★  Favorito");
+            });
             String key = ch.optString("key");
             tool("▦  Mosaico", () -> {
                 player.stop();   // free this list's screen for the mosaic
                 if (key.isEmpty()) startActivity(new Intent(this, MultiActivity.class)); else MultiActivity.add(this, key);
                 finish();
             });
-            tool("Programação", () -> {
-                closeTools();
-                guideCount = 6;
-                handler.removeCallbacks(guideRun);
-                guideRun.run();
-                guideCount = 2;
-                showOverlay();
-            });
+            tool("Programação", () -> { closeTools(); openGuide(); });
         } else {
-            first = tool("Áudio e legendas", () -> { closeTools(); openPanel(); });
-            if (player.getCurrentPosition() > 30_000) tool("↺  Recomeçar do início", () -> { closeTools(); player.seekTo(0); player.play(); });
+            tool("Áudio e legendas", () -> { closeTools(); openPanel(); });
+            tool("↺  Recomeçar do início", () -> { closeTools(); player.seekTo(0); player.play(); });
             String next = getIntent().getStringExtra("next");
             if (next != null && next.length() > 5) tool("⏭  Próximo episódio", () -> { closeTools(); save(); playNext(); });
         }
-        hint.setVisibility(View.GONE);
-        tools.setVisibility(View.VISIBLE);
+        focusable(false);
+    }
+
+    private void focusable(boolean on) {
+        for (int i = 0; i < tools.getChildCount(); i++) tools.getChildAt(i).setFocusable(on);
+    }
+
+    /** ▼: into the buttons. */
+    private void openTools() {
+        if (tools.getChildCount() == 0) buildTools();
+        inTools = true;
+        focusable(true);
         overlay.animate().alpha(1).setDuration(150).start();
         handler.removeCallbacks(hide);
-        View f = first;
+        View f = tools.getChildAt(0);
         f.post(f::requestFocus);
     }
 
@@ -688,9 +755,61 @@ public class PlayerActivity extends Activity implements Player.Listener {
     }
 
     private void closeTools() {
-        tools.setVisibility(View.GONE);
-        hint.setVisibility(View.VISIBLE);
+        inTools = false;
+        focusable(false);   // the arrows change channel again
         showOverlay();
+    }
+
+    /** Runs with the lineup (loads it first if it isn't ready yet). */
+    private void withLineup(java.util.function.Consumer<Lineup> then) {
+        Lineup l = Lineup.ready(this);
+        if (l != null) { then.accept(l); return; }
+        Movies.get(this).run(() -> Lineup.get(this), got -> { if (got != null && !isFinishing()) then.accept(got); });
+    }
+
+    /** Programação: the channel's guide in the side panel. */
+    private void openGuide() {
+        panel.removeAllViews();
+        JSONObject ch = channels.optJSONObject(channel);
+        panel.addView(ui.text("PROGRAMAÇÃO", 16, Ui.semibold, 0x8CFFFFFF), ui.margins(WRAP, WRAP, 0, 0, 0, 6));
+        panel.addView(ui.line(ch.optString("title"), 24, Ui.semibold, 0xFFFFFFFF, 2), ui.margins(MATCH, WRAP, 0, 0, 0, 14));
+        TextView wait = ui.text("Buscando a programação…", 19, Ui.medium, 0xB3FFFFFF);
+        panel.addView(wait);
+        TvUi.Chip close = ui.chip("Fechar", false, null);
+        close.setOnClickListener(v -> { panel.setVisibility(View.GONE); showOverlay(); });
+        panel.addView(close, ui.margins(WRAP, WRAP, 0, 18, 0, 0));
+        panel.setVisibility(View.VISIBLE);
+        overlay.animate().alpha(1).setDuration(150).start();
+        handler.removeCallbacks(hide);
+        close.post(close::requestFocus);
+        final int at = channel;
+        withLineup(l -> {
+            Lineup.Channel lc = l.find(ch.optString("key"));
+            if (lc == null) { wait.setText("Sem programação para este canal."); return; }
+            Iptv iptv = Iptv.get(this);
+            Movies.get(this).run(() -> {
+                for (Iptv.Version v : lc.versions) {
+                    List<Iptv.Program> p = iptv.guide(v, 10);
+                    if (!p.isEmpty()) return p;
+                }
+                return new ArrayList<Iptv.Program>();
+            }, programs -> {
+                if (at != channel || isFinishing() || panel.getVisibility() != View.VISIBLE) return;
+                if (programs == null || programs.isEmpty()) { wait.setText("Sem programação para este canal (a lista não envia o guia dele)."); return; }
+                java.text.SimpleDateFormat hm = new java.text.SimpleDateFormat("HH:mm", Locale.US);
+                long now = System.currentTimeMillis();
+                int index = panel.indexOfChild(wait);
+                panel.removeView(wait);
+                for (Iptv.Program p : programs) {
+                    boolean on = p.start <= now && p.end > now;
+                    LinearLayout row = ui.row();
+                    row.setGravity(Gravity.TOP);
+                    row.addView(ui.text(on ? "AGORA" : hm.format(new java.util.Date(p.start)), 17, Ui.semibold, on ? 0xFFE5252A : 0x99FFFFFF), TvUi.lp(ui.px(90), WRAP));
+                    row.addView(ui.line(p.title, 19, on ? Ui.semibold : Ui.medium, 0xFFFFFFFF, 2), new LinearLayout.LayoutParams(0, WRAP, 1));
+                    panel.addView(row, index++, ui.margins(MATCH, WRAP, 0, 0, 0, 10));
+                }
+            });
+        });
     }
 
     // MARK: - Channel list (live, OK)

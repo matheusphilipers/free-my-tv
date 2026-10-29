@@ -152,6 +152,20 @@ final class Movies {
         notifyListeners();
         return !had;
     }
+    /** Started watching: the title leaves My list (it's in Continue watching now). True if it was there. */
+    boolean watching(String kind, int id) {
+        if (id <= 0 || kind == null) return false;
+        List<Title> list = myList();
+        boolean had = false;
+        for (int i = list.size() - 1; i >= 0; i--) if (list.get(i).id == id && list.get(i).kind.equals(kind)) { list.remove(i); had = true; }
+        if (!had) return false;
+        JSONArray a = new JSONArray();
+        try { for (Title x : list) a.put(x.json()); } catch (Exception ignored) {}
+        prefs.edit().putString("mine", a.toString()).apply();
+        notifyListeners();
+        return true;
+    }
+
     static final class Review { String author = "", text = "", date = ""; double rating; boolean english; }
     static final class Provider { int id; String name = "", logo = "", pkg; }
 
