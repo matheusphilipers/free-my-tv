@@ -32,7 +32,9 @@ final class Img {
         @Override protected int sizeOf(String key, Bitmap b) { return b.getByteCount(); }
     };
     private static final Map<String, List<ImageView>> WAITING = new HashMap<>();
-    private static final java.util.Set<String> FAILED = new java.util.HashSet<>(), LOADING = new java.util.HashSet<>();
+    private static final java.util.Set<String> LOADING = new java.util.HashSet<>();
+    // A failed image is tried again after a few minutes (the network may have been down), not on every frame.
+    private static final Map<String, Long> FAILED = new HashMap<>();
     private static final ExecutorService IO = Executors.newFixedThreadPool(3);
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
     private static final List<Listener> LISTENERS = new ArrayList<>();
@@ -40,7 +42,30 @@ final class Img {
 
     private Img() {}
 
-    static void init(Context c) { app = c.getApplicationContext(); }
+    static void init(Context c) {
+        app = c.getApplicationContext();
+        IO.execute(Img::prune);
+    }
+
+    /** The image cache on disk stays small: files older than 14 days go, then the oldest past 150 MB. */
+    private static void prune() {
+        File[] files = new File(app.getCacheDir(), "img").listFiles();
+        if (files == null) return;
+        long now = System.currentTimeMillis(), total = 0;
+        List<File> kept = new ArrayList<>();
+        for (File f : files) {
+            if (now - f.lastModified() > 14L * 24 * 60 * 60_000L || f.getName().endsWith(".part")) { f.delete(); continue; }
+            kept.add(f);
+            total += f.length();
+        }
+        if (total <= 150L * 1024 * 1024) return;
+        java.util.Collections.sort(kept, (a, b) -> Long.compare(a.lastModified(), b.lastModified()));
+        for (File f : kept) {
+            if (total <= 120L * 1024 * 1024) break;
+            total -= f.length();
+            f.delete();
+        }
+    }
     static void addListener(Listener l) { if (!LISTENERS.contains(l)) LISTENERS.add(l); }
     static void removeListener(Listener l) { LISTENERS.remove(l); }
 
@@ -75,7 +100,9 @@ final class Img {
 
     private static void start(String url, int maxW) {
         synchronized (LOADING) {
-            if (FAILED.contains(url) || !LOADING.add(url)) return;
+            Long failed = FAILED.get(url);
+            if (failed != null && System.currentTimeMillis() - failed < 5 * 60_000L) return;
+            if (!LOADING.add(url)) return;
         }
         IO.execute(() -> {
             Bitmap b = null;
@@ -87,7 +114,7 @@ final class Img {
             Bitmap done = b;
             synchronized (LOADING) {
                 LOADING.remove(url);
-                if (done == null) FAILED.add(url);
+                if (done == null) FAILED.put(url, System.currentTimeMillis()); else FAILED.remove(url);
             }
             if (done != null) MEMORY.put(url, done);
             MAIN.post(() -> {
@@ -109,6 +136,8 @@ final class Img {
         BitmapFactory.decodeFile(f.getPath(), o);
         int sample = 1;
         while (maxW > 0 && o.outWidth / (sample * 2) >= maxW) sample *= 2;
+        // Whatever the size asked, never a huge picture in memory (a list's icon can be a 6000-pixel image).
+        while ((long) (o.outWidth / sample) * (o.outHeight / sample) > 4_000_000L) sample *= 2;
         o = new BitmapFactory.Options();
         o.inSampleSize = sample;
         // TMDB's images are JPEGs with no transparency: 16 bits a pixel is half the memory and looks the same on a TV.
@@ -131,8 +160,11 @@ final class Img {
             File tmp = new File(to.getPath() + ".part");
             try (InputStream in = c.getInputStream(); FileOutputStream out = new FileOutputStream(tmp)) {
                 byte[] buf = new byte[16384];
-                int n;
-                while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+                int n, total = 0;
+                while ((n = in.read(buf)) > 0) {
+                    out.write(buf, 0, n);
+                    if ((total += n) > 12 * 1024 * 1024) throw new java.io.IOException("image too big");
+                }
             }
             if (!tmp.renameTo(to)) throw new java.io.IOException("rename");
         } finally {

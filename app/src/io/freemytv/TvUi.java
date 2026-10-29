@@ -145,8 +145,18 @@ final class TvUi {
             android.view.ViewParent p = getParent();
             for (int i = 0; i < 4 && p instanceof ViewGroup; i++, p = p.getParent()) {
                 if (p instanceof android.widget.ScrollView || p instanceof android.widget.HorizontalScrollView) {
-                    ((ViewGroup) p).setClipToPadding(false);
-                    break;   // a scrolling area keeps clipping at its own edge
+                    // A scrolling area keeps clipping at its own edge: it needs a margin inside for the 6% a focused
+                    // chip grows (sideways in a vertical list, above and below in a horizontal row).
+                    ViewGroup sv = (ViewGroup) p;
+                    sv.setClipToPadding(false);
+                    int m = px(12);
+                    if (p instanceof android.widget.ScrollView) {
+                        if (sv.getPaddingLeft() < m || sv.getPaddingRight() < m)
+                            sv.setPadding(Math.max(m, sv.getPaddingLeft()), sv.getPaddingTop(), Math.max(m, sv.getPaddingRight()), sv.getPaddingBottom());
+                    } else if (sv.getPaddingTop() < m / 2 || sv.getPaddingBottom() < m / 2) {
+                        sv.setPadding(sv.getPaddingLeft(), Math.max(m / 2, sv.getPaddingTop()), sv.getPaddingRight(), Math.max(m / 2, sv.getPaddingBottom()));
+                    }
+                    break;
                 }
                 ((ViewGroup) p).setClipChildren(false);
                 ((ViewGroup) p).setClipToPadding(false);

@@ -72,7 +72,12 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
         for (Object[] n : names) {
             final int id = (Integer) n[1];
             TvUi.Chip c = ui.new Chip((String) n[0], 22, false);
-            c.setOnFocusChangeListener((v, f) -> { c.paint(); if (f) show(id); });
+            // Only the arrows change the tab: when the focused view disappears (a button that removes itself),
+            // Android hands the focus to the first tab, and that mustn't open Buscar.
+            c.setOnFocusChangeListener((v, f) -> {
+                c.paint();
+                if (f && (tab == -1 || android.os.SystemClock.uptimeMillis() - keyAt < 600)) show(id);
+            });
             tabs.add(c);
             tabIds.add(id);
             tabBar.addView(c, ui.margins(WRAP, WRAP, 0, 0, 10, 0));
@@ -888,6 +893,16 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
             uhd.setOnClickListener(v -> { iptv.setPrefer4k(true); hd.set(false); uhd.set(true); });
             for (TvUi.Chip c : new TvUi.Chip[] {dub, leg, hd, uhd}) r.addView(c, ui.margins(WRAP, WRAP, 0, 0, 12, 0));
             p.addView(r, ui.margins(WRAP, WRAP, 0, 18, 0, 0));
+            // Adult channels: hidden until turned on here (Ao vivo, the search and the mosaic leave them out).
+            boolean adultOn = getSharedPreferences("iptv", MODE_PRIVATE).getBoolean("adult", false);
+            TvUi.Chip adult = ui.chip(adultOn ? "Canais adultos: aparecendo" : "Canais adultos: escondidos", adultOn, null);
+            adult.setOnClickListener(v -> {
+                boolean on = !getSharedPreferences("iptv", MODE_PRIVATE).getBoolean("adult", false);
+                Lineup.setAdult(this, on);
+                adult.setText(on ? "Canais adultos: aparecendo" : "Canais adultos: escondidos");
+                adult.set(on);
+            });
+            p.addView(adult, ui.margins(WRAP, WRAP, 0, 12, 0, 0));
         }
         // Add a list.
         p.addView(ui.text(iptv.connected() ? "ADICIONAR OUTRA LISTA" : "ADICIONAR UMA LISTA", 16, Ui.semibold, ui.dim), ui.margins(WRAP, WRAP, 0, 26, 0, 6));
@@ -1086,7 +1101,7 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
         private final LinearLayout results = ui.column();
         private int generation;
         private final Runnable run = this::run;
-        private final android.widget.EditText box = field("Digite o nome de um filme, série, ator ou canal…", "", false);
+        private final android.widget.EditText box = field("Um filme, série, ator, canal ou gênero (ex.: filmes de suspense)…", "", false);
 
         Search() {
             box.setInputType(android.text.InputType.TYPE_CLASS_TEXT);
@@ -1117,11 +1132,73 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
             results.setClipChildren(false);
             sv.addView(results);
             view.addView(sv, new LinearLayout.LayoutParams(MATCH, 0, 1));
-            results.addView(ui.text("Aperte o microfone do controle e fale, ou OK no campo para digitar.", 21, Ui.medium, ui.dim));
+            results.addView(ui.text("Aperte o microfone do controle e fale, ou OK no campo para digitar. Dá para pedir por nome (“Duna”, “Wagner Moura”, “SporTV”) ou por tipo: “filmes de suspense”, “séries de terror”, “comédia dos anos 90”, “ação brasileiro”, “lançamentos de ficção”, “documentários da Netflix”.", 21, Ui.medium, ui.dim));
         }
 
         void listenNow() {
-            listen(text -> { box.setText(text); box.setSelection(text.length()); handler.removeCallbacks(run); run(); });
+            listen(text -> {
+                String pick = pickHeard(text);
+                box.setText(pick);
+                box.setSelection(pick.length());
+                handler.removeCallbacks(run);
+                run();
+            });
+        }
+
+        /**
+         * Of what the microphone thought it heard ("Dona", "Duna", "Luna"), the first that is something on your lists
+         * (a channel, a movie or show, a kind of title); else the most likely one.
+         */
+        private String pickHeard(String first) {
+            Iptv iptv = Iptv.get(MoviesActivity.this);
+            Lineup lineup = Lineup.ready(MoviesActivity.this);
+            List<String> heard = new ArrayList<>(Voice.heardAlso);
+            // Best: a guess that is a whole title of your lists ("Duna"), a kind of title, or a channel's name.
+            for (String a : heard) if (iptv.hasTitle(a) || Ask.understand(a) != null || (lineup != null && !lineup.search(a, 1).isEmpty())) return a;
+            // Then: one that is part of a title ("Bruna" is in "Bruna Surfistinha").
+            for (String a : heard) if (!iptv.search(a, 1).isEmpty()) return a;
+            return first;
+        }
+
+        /**
+         * "Você quis dizer: Duna · Luna": the microphone's other guesses, and titles of your lists that sound like
+         * what was heard ("Bruna" → "Duna"), one OK away.
+         */
+        private void heardAlso(String q, int gen) {
+            List<String> others = new ArrayList<>();
+            boolean ours = false;
+            for (String a : Voice.heardAlso) {
+                if (a.equalsIgnoreCase(q)) ours = true;
+                else if (others.size() < 3) others.add(a);
+            }
+            if (!ours) others.clear();
+            LinearLayout line = ui.row();
+            line.setClipChildren(false);
+            line.addView(ui.text("Você quis dizer:", 19, Ui.medium, ui.dim), ui.margins(WRAP, WRAP, 4, 0, 14, 0));
+            line.setVisibility(others.isEmpty() ? View.GONE : View.VISIBLE);
+            for (String a : others) addGuess(line, a);
+            results.addView(line, 0, ui.margins(WRAP, WRAP, 0, 4, 0, 14));
+            // Titles of your lists that sound like it, when it isn't a title itself (off the main thread: it goes
+            // through every title).
+            Iptv iptv = Iptv.get(MoviesActivity.this);
+            if (iptv.hasTitle(q) || Ask.understand(q) != null) return;
+            movies.run(() -> iptv.soundsLike(q, 4), like -> {
+                if (gen != generation || like == null) return;
+                for (String t : like) {
+                    boolean dup = false;
+                    for (String o : others) if (Iptv.normalize(o).equals(Iptv.normalize(t))) dup = true;
+                    if (dup || others.size() >= 6) continue;
+                    others.add(t);
+                    addGuess(line, t);
+                }
+                if (!others.isEmpty()) line.setVisibility(View.VISIBLE);
+            });
+        }
+
+        private void addGuess(LinearLayout line, String a) {
+            TvUi.Chip c = ui.chip(a, false, null);
+            c.setOnClickListener(v -> { box.setText(a); box.setSelection(a.length()); handler.removeCallbacks(run); run(); });
+            line.addView(c, ui.margins(WRAP, WRAP, 0, 0, 10, 0));
         }
 
         private void run() {
@@ -1129,6 +1206,7 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
             int gen = ++generation;
             results.removeAllViews();
             if (q.length() < 2) return;
+            heardAlso(q, gen);
             // What the words mean decides the order: a channel group ("jogos de hoje"), a team ("Galo"), a channel's
             // name, or a title. Sections say what they are: Ao vivo agora, Filmes / Séries nas suas listas, Pessoas,
             // Fora das suas listas.
@@ -1145,6 +1223,11 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
                         g.subList(0, Math.min(20, g.size())), group, () -> openLive(gname)));
             }
             boolean games = addGames(q);
+            // A kind of title ("filmes de suspense", "séries de terror", "comédia dos anos 90"): titles of that kind,
+            // with your settings, instead of looking for the words in names.
+            // ("documentários", "infantil": the channels above, then the titles of that kind.)
+            Ask ask = !games ? Ask.understand(q) : null;
+            if (ask != null) { askRows(ask, gen); return; }
             List<Lineup.Channel> chans = lineup == null || group != null ? new ArrayList<>() : lineup.search(q, 16);
             List<Iptv.Version> mine = iptv.search(q, 30);
             List<Iptv.Version> films = new ArrayList<>(), shows = new ArrayList<>();
@@ -1158,14 +1241,25 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
             if (group != null || (games && mine.isEmpty())) return;   // a group or a team: no need for the catalog
             TextView wait = ui.text("Buscando no catálogo…", 21, Ui.medium, ui.dim);
             results.addView(wait, ui.margins(WRAP, WRAP, 4, 20, 0, 0));
-            movies.run(() -> movies.searchEverything(q), found -> {
+            String said = Speech.clean(q).isEmpty() ? q : Speech.clean(q);
+            movies.run(() -> movies.searchEverything(said), found -> {
                 if (gen != generation) return;
                 results.removeView(wait);
                 if (found == null) return;
-                if (!found.people.isEmpty()) peopleRow(found.people);
-                List<Movies.Title> others = new ArrayList<>();
-                for (Movies.Title t : found.titles) if (!iptv.has(t)) others.add(t);
+                // A name said or typed is most often a title: titles whose name is exactly it first, people after
+                // (the catalog's search is loose: "Duna" also brings a "Bruna").
+                String exact = Iptv.normalize(said);
+                List<Movies.Title> others = new ArrayList<>(), first = new ArrayList<>();
+                for (Movies.Title t : found.titles) {
+                    if (iptv.has(t)) continue;
+                    (Iptv.normalize(t.name).equals(exact) || Iptv.normalize(t.original).equals(exact) || Iptv.normalize(t.name).startsWith(exact + " ") ? first : others).add(t);
+                }
+                others.addAll(0, first);
+                boolean person = false;
+                for (Movies.Person p : found.people) if (Iptv.normalize(p.name).startsWith(exact)) person = true;
+                if (person && !found.people.isEmpty()) peopleRow(found.people);
                 if (others.isEmpty()) {
+                    if (!person && !found.people.isEmpty()) peopleRow(found.people);
                     if (results.getChildCount() == 0) results.addView(ui.text("Nada encontrado para “" + q + "”.", 21, Ui.medium, ui.dim), ui.margins(WRAP, WRAP, 4, 20, 0, 0));
                     return;
                 }
@@ -1189,6 +1283,59 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
                     r.addView(ui.card(t, w, () -> TvUi.open(MoviesActivity.this, t)), ui.margins(w, WRAP, 0, 0, 24, 0));
                 }
                 results.addView(grid);
+                if (!person && !found.people.isEmpty()) peopleRow(found.people);
+            });
+        }
+
+        /** The results of a search by kind: your lists' own category, then what's on your lists, your streaming, the best rated. */
+        private void askRows(Ask a, int gen) {
+            Iptv iptv = Iptv.get(MoviesActivity.this);
+            String label = a.label();
+            int min = movies.minRating();
+            results.addView(ui.text("Entendi: " + label + (min > 0 ? " · nota " + min + "+" : "") + " · sem os gêneros que você evita",
+                    19, Ui.medium, ui.dim), ui.margins(WRAP, WRAP, 4, 0, 0, 10));
+            // The providers' own categories with that name ("SUSPENSE", "Filmes | Terror").
+            if (a.services.isEmpty() && iptv.connected()) {
+                for (String g : a.genres) {
+                    String word = Lineup.norm(Movies.genreName(g)).split(" ")[0];
+                    for (String kind : a.kinds()) {
+                        for (String[] c : iptv.mergedCategories(kind)) {
+                            if (!(" " + c[0] + " ").contains(" " + word)) continue;
+                            List<Iptv.Version> items = iptv.mergedCategory(kind, c[0]);
+                            if (items.isEmpty()) continue;
+                            iptvRow("Categoria “" + c[1] + "” das suas listas", items.subList(0, Math.min(40, items.size())));
+                            break;
+                        }
+                    }
+                }
+            }
+            TextView wait = ui.text("Procurando " + label.toLowerCase(Ui.locale()) + "…", 21, Ui.medium, ui.dim);
+            results.addView(wait, ui.margins(WRAP, WRAP, 4, 20, 0, 0));
+            movies.run(() -> {
+                List<Movies.Title> onLists = new ArrayList<>(), streaming = new ArrayList<>(), best = new ArrayList<>();
+                if (a.services.isEmpty()) {
+                    if (iptv.connected()) for (Movies.Title t : movies.ask(a, "lists")) if (iptv.has(t)) onLists.add(t);
+                    for (Movies.Title t : movies.ask(a, "best")) {
+                        boolean dup = false;
+                        for (Movies.Title x : onLists) if (x.id == t.id && x.kind.equals(t.kind)) { dup = true; break; }
+                        if (!dup) best.add(t);
+                    }
+                }
+                streaming.addAll(movies.ask(a, "streaming"));
+                return new Object[] {onLists, streaming, best};
+            }, got -> {
+                if (gen != generation) return;
+                results.removeView(wait);
+                if (got == null) {
+                    results.addView(ui.text("Não deu para buscar agora (sem internet ou sem a chave do TMDB).", 21, Ui.medium, ui.dim), ui.margins(WRAP, WRAP, 4, 20, 0, 0));
+                    return;
+                }
+                @SuppressWarnings("unchecked") List<Movies.Title> onLists = (List<Movies.Title>) got[0], streaming = (List<Movies.Title>) got[1], best = (List<Movies.Title>) got[2];
+                if (!onLists.isEmpty()) results.addView(posterRow(label + " nas suas listas", "dá para assistir agora", onLists, false));
+                if (!streaming.isEmpty()) results.addView(posterRow(label + " no seu streaming", a.services.isEmpty() ? "nos serviços que você assina" : "", streaming, false));
+                if (!best.isEmpty()) results.addView(posterRow("Mais " + label.toLowerCase(Ui.locale()) + " bem avaliados", "veja onde assistir nos detalhes", best, false));
+                if (onLists.isEmpty() && streaming.isEmpty() && best.isEmpty())
+                    results.addView(ui.text("Nada de " + label.toLowerCase(Ui.locale()) + " com nota " + min + "+. Dá para baixar a nota mínima em Ajustes.", 21, Ui.medium, ui.dim), ui.margins(WRAP, WRAP, 4, 20, 0, 0));
             });
         }
 
@@ -1327,13 +1474,24 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
 
     /** The remote's microphone: open Buscar and listen, wherever you are on this screen. */
     @Override public void voiceSearch() {
-        if (tab == T_LIVE && live != null) { Voice.listen(this, live::search); return; }   // on Ao vivo: channels
+        if (tab == T_LIVE && live != null) {   // on Ao vivo: channels (of what was heard, the guess that is a channel)
+            Voice.listen(this, text -> {
+                Lineup l = Lineup.ready(this);
+                String pick = text;
+                if (l != null) for (String x : new ArrayList<>(Voice.heardAlso)) if (!l.search(x, 1).isEmpty()) { pick = x; break; }
+                live.search(pick);
+            });
+            return;
+        }
         int at = tabIds.indexOf(T_SEARCH);
-        if (tab != T_SEARCH && at >= 0) tabs.get(at).requestFocus();   // focusing the tab shows it
+        if (tab != T_SEARCH && at >= 0) { show(T_SEARCH); tabs.get(at).requestFocus(); }
         if (search != null) search.listenNow();
     }
 
+    private long keyAt;
+
     @Override public boolean dispatchKeyEvent(android.view.KeyEvent e) {
+        keyAt = android.os.SystemClock.uptimeMillis();
         if (Voice.isMicKey(e.getKeyCode()) && !Voice.listening()) {
             if (e.getAction() == android.view.KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0) {
                 AppLog.w("voice: mic key " + e.getKeyCode());
@@ -1358,6 +1516,7 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
         if (at < 0) return;
         if (tab == T_LIVE && live != null) { live.open(group); return; }
         getIntent().putExtra("group", group);
+        show(T_LIVE);
         tabs.get(at).requestFocus();
         if (live != null) live.open(group);
     }

@@ -29,12 +29,8 @@ final class SofaWeb {
         final CountDownLatch done = new CountDownLatch(1);
         MAIN.post(() -> {
             try {
-                if (web == null) {
-                    web = new WebView(c.getApplicationContext());
-                    web.getSettings().setJavaScriptEnabled(true);
-                    web.getSettings().setBlockNetworkImage(true);
-                }
-                web.setWebViewClient(new WebViewClient() {
+                create(c);
+                web.setWebViewClient(new Client() {
                     @Override public void onPageFinished(WebView v, String u) {
                         read(v, result, done, 0);
                     }
@@ -49,12 +45,50 @@ final class SofaWeb {
             if (!done.await(15, TimeUnit.SECONDS)) throw new IOException("sofa web timeout");
         } catch (InterruptedException e) {
             throw new IOException("interrupted");
+        } finally {
+            releaseLater();
         }
         if (result[0] == null) throw new IOException("sofa web: no JSON");
         return result[0];
     }
 
     private static boolean onSite;
+
+    /** The off-screen browser, made when needed: only Sofascore's pages, no files, no images. */
+    @SuppressLint("SetJavaScriptEnabled")
+    private static void create(Context c) {
+        MAIN.removeCallbacks(RELEASE);
+        if (web != null) return;
+        web = new WebView(c.getApplicationContext());
+        android.webkit.WebSettings s = web.getSettings();
+        s.setJavaScriptEnabled(true);
+        s.setDomStorageEnabled(true);
+        s.setBlockNetworkImage(true);
+        s.setAllowFileAccess(false);
+        s.setAllowContentAccess(false);
+        s.setGeolocationEnabled(false);
+        s.setMediaPlaybackRequiresUserGesture(true);
+        onSite = false;
+    }
+
+    /** A browser costs tens of MB: it goes away a couple of minutes after the last question. */
+    private static final Runnable RELEASE = () -> {
+        if (web == null) return;
+        web.stopLoading();
+        web.destroy();
+        web = null;
+        onSite = false;
+    };
+
+    private static void releaseLater() { MAIN.post(() -> { MAIN.removeCallbacks(RELEASE); MAIN.postDelayed(RELEASE, 120_000); }); }
+
+    /** Stays on Sofascore: any other address the page tries to open is refused. */
+    private static class Client extends WebViewClient {
+        @Override public boolean shouldOverrideUrlLoading(WebView v, android.webkit.WebResourceRequest r) {
+            String host = r.getUrl().getHost();
+            return host == null || !(host.equals("sofascore.com") || host.endsWith(".sofascore.com"));
+        }
+    }
 
     /**
      * Like Sofascore's own site does: the page www.sofascore.com open (off-screen), and the API asked from inside it
@@ -69,18 +103,13 @@ final class SofaWeb {
                 + ".catch(function(e){window.__fmtv=JSON.stringify({error:String(e)});});})()";
         MAIN.post(() -> {
             try {
-                if (web == null) {
-                    web = new WebView(c.getApplicationContext());
-                    web.getSettings().setJavaScriptEnabled(true);
-                    web.getSettings().setDomStorageEnabled(true);
-                    web.getSettings().setBlockNetworkImage(true);
-                }
+                create(c);
                 Runnable ask = () -> {
                     web.evaluateJavascript(js, null);
                     poll(result, done, 0);
                 };
                 if (onSite) { ask.run(); return; }
-                web.setWebViewClient(new WebViewClient() {
+                web.setWebViewClient(new Client() {
                     @Override public void onPageFinished(WebView v, String u) {
                         if (onSite) return;
                         onSite = true;
@@ -97,6 +126,8 @@ final class SofaWeb {
             if (!done.await(25, TimeUnit.SECONDS)) throw new IOException("sofa site timeout");
         } catch (InterruptedException e) {
             throw new IOException("interrupted");
+        } finally {
+            releaseLater();
         }
         if (result[0] == null) throw new IOException("sofa site: no answer");
         return result[0];

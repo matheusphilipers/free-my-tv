@@ -145,18 +145,36 @@ final class LivePanel {
         for (Iptv.Source s : iptv.sources()) {
             List<String> names = iptv.categories(s, "live");
             if (names.isEmpty()) continue;
-            boolean open = opened.contains(s.id);
-            TvUi.Chip head = ui.chip((open ? "▾  " : "▸  ") + s.name + "  (" + names.size() + ")", false, null);
+            TvUi.Chip head = ui.chip("", false, null);
             head.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
+            cats.addView(head, ui.margins(MATCH, WRAP, 0, 0, 0, 8));
+            // Opens and closes in place: rebuilding the column would drop the focus (it landed on the Buscar tab).
             head.setOnClickListener(v -> {
                 if (!opened.remove(s.id)) opened.add(s.id);
-                show(lineup);
+                fold(head, s, names);
             });
-            cats.addView(head, ui.margins(MATCH, WRAP, 0, 0, 0, 8));
-            if (open) for (String n : names) chip("   " + n, "list:" + s.id + ":" + n, -1);
+            fold(head, s, names);
         }
         fill(0);
     }
+
+    /** Shows or hides a list's own categories right under its title. */
+    private void fold(TvUi.Chip head, Iptv.Source s, List<String> names) {
+        boolean open = opened.contains(s.id);
+        head.setText((open ? "▾  " : "▸  ") + s.name + "  (" + names.size() + ")");
+        int at = cats.indexOfChild(head) + 1;
+        String tag = "list-cat:" + s.id;
+        while (at < cats.getChildCount() && tag.equals(cats.getChildAt(at).getTag(R_TAG))) cats.removeViewAt(at);
+        if (!open) return;
+        for (String n : names) {
+            TvUi.Chip c = chip("   " + n, "list:" + s.id + ":" + n, -1);
+            cats.removeView(c);   // chip() adds at the end: put it under the title instead
+            c.setTag(R_TAG, tag);
+            cats.addView(c, at++, ui.margins(MATCH, WRAP, 0, 0, 0, 8));
+        }
+    }
+
+    private static final int R_TAG = 0x7f0b0001;
 
     /** Opens a group (from the search: "jogos de hoje" → Jogos de hoje) and puts the focus on it. */
     void open(String group) {
@@ -284,11 +302,17 @@ final class LivePanel {
         }
     }
 
-    private final java.util.concurrent.ExecutorService probes = java.util.concurrent.Executors.newSingleThreadExecutor();
+    // One for the whole app: each Ao vivo opened used to leave its own thread behind.
+    private static final java.util.concurrent.ExecutorService probes = java.util.concurrent.Executors.newSingleThreadExecutor();
 
     private void fill(int from) {
         if (from == 0) list.removeAllViews();
-        else list.removeViewAt(list.getChildCount() - 1);   // the "more" row
+        else {
+            // The "more" button goes away: first move the focus to the last channel, or it would jump to the tabs.
+            View last = lastCell();
+            if (last != null) last.requestFocus();
+            list.removeViewAt(list.getChildCount() - 1);
+        }
         pair = null;
         List<Lineup.Channel> all = channels();
         if (all.isEmpty()) {
@@ -335,6 +359,16 @@ final class LivePanel {
     }
 
     private static final Object PAIR = new Object();
+
+    private View lastCell() {
+        for (int c = list.getChildCount() - 1; c >= 0; c--) {
+            View p = list.getChildAt(c);
+            if (p.getTag() != PAIR) continue;
+            LinearLayout row = (LinearLayout) p;
+            for (int j = row.getChildCount() - 1; j >= 0; j--) if (row.getChildAt(j).isFocusable()) return row.getChildAt(j);
+        }
+        return null;
+    }
 
     /** Adds a channel to the list, two per line (a lone last one keeps half the width, next to a spacer). */
     private void cell(View r) {
