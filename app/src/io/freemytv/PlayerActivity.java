@@ -287,7 +287,9 @@ public class PlayerActivity extends Activity implements Player.Listener {
     private int guideCount = 2;
 
     /** What's on now and next, under the channel's name. */
-    private final Runnable guideRun = () -> {
+    private final Runnable guideRun = new Runnable() { @Override public void run() { guide(); } };
+
+    private void guide() {
         final int at = channel;
         final int many = guideCount;
         Lineup.Channel ch = lineupChannel();
@@ -320,7 +322,7 @@ public class PlayerActivity extends Activity implements Player.Listener {
             nowNext.setText(b.toString());
             nowNext.setVisibility(b.length() == 0 ? View.GONE : View.VISIBLE);
         });
-    };
+    }
 
     /** The source the channel plays from (index in its "alts": each list and quality it's in, best first). */
     private int alt;
