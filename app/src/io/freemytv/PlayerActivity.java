@@ -519,6 +519,8 @@ public class PlayerActivity extends Activity implements Player.Listener {
 
     @Override public void onIsPlayingChanged(boolean playing) {
         if (!playing) save();
+        // Playing again (after pausing): the information goes after a moment.
+        if (playing && overlay.getAlpha() > 0 && !busy()) { handler.removeCallbacks(hide); handler.postDelayed(hide, 5000); }
     }
 
     /** The next episode, if this was one. */
@@ -563,7 +565,24 @@ public class PlayerActivity extends Activity implements Player.Listener {
         return h > 0 ? String.format(Locale.US, "%d:%02d:%02d", h, m, s % 60) : String.format(Locale.US, "%d:%02d", m, s % 60);
     }
 
-    private final Runnable hide = () -> { if (player != null && player.isPlaying() && !busy()) overlay.animate().alpha(0).setDuration(300).start(); };
+    /**
+     * The information leaves the screen 5 s after the last key. Still loading: it waits for the picture and then
+     * goes. It stays while paused (that's when you look at it) and while a menu is open (closing it starts again).
+     */
+    private final Runnable hide = new Runnable() {
+        @Override public void run() {
+            if (player == null) return;
+            if (busy()) {
+                if (Watch.isOpen(PlayerActivity.this)) handler.postDelayed(this, 1000);   // a sheet closes on its own: look again
+                return;
+            }
+            if (!player.isPlaying() && player.getPlayWhenReady() && player.getPlaybackState() != Player.STATE_ENDED) {
+                handler.postDelayed(this, 1000);   // buffering: check again
+                return;
+            }
+            if (player.isPlaying()) overlay.animate().alpha(0).setDuration(300).start();
+        }
+    };
 
     /** Something open that takes the arrows (audio panel, tools bar, channel list, a sheet). */
     private boolean busy() {
@@ -575,7 +594,7 @@ public class PlayerActivity extends Activity implements Player.Listener {
     private void showOverlay() {
         overlay.animate().alpha(1).setDuration(150).start();
         handler.removeCallbacks(hide);
-        handler.postDelayed(hide, 4000);
+        handler.postDelayed(hide, 5000);
     }
 
     private final Runnable doSeek = () -> {
@@ -1033,6 +1052,7 @@ public class PlayerActivity extends Activity implements Player.Listener {
     @Override protected void onResume() {
         super.onResume();
         handler.post(tick);
+        showOverlay();   // back to the player: the information shows, then goes
     }
 
     @Override protected void onDestroy() {
