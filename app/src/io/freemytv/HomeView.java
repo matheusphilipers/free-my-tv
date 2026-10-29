@@ -1683,7 +1683,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             }
         }
         if (lines.isEmpty()) {
-            c.drawText(Ui.tr(all == null ? "Loading games…" : "No games scheduled"), x, r.top + 120 * k, cardDim);
+            c.drawText(all == null ? Ui.tr("Loading games…") : Ui.tr("No games scheduled"), x, r.top + 120 * k, cardDim);
             return;
         }
         float labelW = 0;

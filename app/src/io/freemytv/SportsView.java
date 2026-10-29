@@ -116,7 +116,7 @@ final class SportsView extends View implements HomeData.Listener {
         Sports.All a = data.sports;
         if (a == null || tabs.isEmpty()) {
             sd.text(Ui.medium, 26, sd.dim(false));
-            c.drawText(Ui.tr(a == null ? "Loading games…" : "No games scheduled"), x, 220 * k, sd.text);
+            c.drawText(a == null ? Ui.tr("Loading games…") : Ui.tr("No games scheduled"), x, 220 * k, sd.text);
             return;
         }
         // Tabs

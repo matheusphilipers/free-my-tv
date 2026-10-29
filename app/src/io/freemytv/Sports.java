@@ -516,11 +516,11 @@ final class Sports {
             if (loc != null) r.place = loc.optString("locality");
         }
         r.at = sessionTime(o);
-        String[][] names = {{"FirstPractice", "Practice 1"}, {"SecondPractice", "Practice 2"}, {"ThirdPractice", "Practice 3"},
-                {"SprintQualifying", "Sprint qualifying"}, {"Sprint", "Sprint"}, {"Qualifying", "Qualifying"}};
+        String[][] names = {{"FirstPractice", Ui.tr("Practice 1")}, {"SecondPractice", Ui.tr("Practice 2")}, {"ThirdPractice", Ui.tr("Practice 3")},
+                {"SprintQualifying", Ui.tr("Sprint qualifying")}, {"Sprint", Ui.tr("Sprint")}, {"Qualifying", Ui.tr("Qualifying")}};
         for (String[] n : names) {
             JSONObject s = o.optJSONObject(n[0]);
-            if (s != null && s.has("date")) r.sessions.add(new Session(Ui.tr(n[1]), sessionTime(s)));
+            if (s != null && s.has("date")) r.sessions.add(new Session(n[1], sessionTime(s)));
         }
         r.sessions.add(new Session(Ui.tr("Race"), r.at));
         java.util.Collections.sort(r.sessions, (x, y) -> Long.compare(x.at, y.at));
