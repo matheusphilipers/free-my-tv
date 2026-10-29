@@ -1241,13 +1241,14 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
             if (group != null || (games && mine.isEmpty())) return;   // a group or a team: no need for the catalog
             TextView wait = ui.text("Buscando no catálogo…", 21, Ui.medium, ui.dim);
             results.addView(wait, ui.margins(WRAP, WRAP, 4, 20, 0, 0));
-            movies.run(() -> movies.searchEverything(q), found -> {
+            String said = Speech.clean(q).isEmpty() ? q : Speech.clean(q);
+            movies.run(() -> movies.searchEverything(said), found -> {
                 if (gen != generation) return;
                 results.removeView(wait);
                 if (found == null) return;
                 // A name said or typed is most often a title: titles whose name is exactly it first, people after
                 // (the catalog's search is loose: "Duna" also brings a "Bruna").
-                String exact = Iptv.normalize(q);
+                String exact = Iptv.normalize(said);
                 List<Movies.Title> others = new ArrayList<>(), first = new ArrayList<>();
                 for (Movies.Title t : found.titles) {
                     if (iptv.has(t)) continue;

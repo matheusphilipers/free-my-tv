@@ -255,6 +255,17 @@ final class Lineup {
 
     /** Channels whose name has the words (names that start with them first). */
     List<Channel> search(String query, int max) {
+        // Said the way it sounds ("esporte vê", "agá bê ó") or with the number in words ("ESPN dois").
+        String said = Speech.clean(query);
+        List<Channel> out = new ArrayList<>();
+        for (String v : Speech.variants(said)) {
+            for (Channel ch : searchOne(v, max)) if (!out.contains(ch)) out.add(ch);
+            if (out.size() >= max) break;
+        }
+        return out.size() > max ? new ArrayList<>(out.subList(0, max)) : out;
+    }
+
+    private List<Channel> searchOne(String query, int max) {
         String q = norm(query);
         List<Channel> starts = new ArrayList<>(), rest = new ArrayList<>();
         if (q.length() < 2) return starts;

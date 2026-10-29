@@ -33,6 +33,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.regex.Matcher;
@@ -205,7 +206,20 @@ final class Iptv {
 
     /** Movies and shows of all lists whose name has the words typed (best version of each), up to `max`. */
     List<Version> search(String query, int max) {
-        String q = normalize(query);
+        List<Version> out = new ArrayList<>();
+        // As said ("Duna parte dois") and as titles are written ("duna parte 2", "rocky ii").
+        Set<String> seenKeys = new java.util.HashSet<>();
+        for (String variant : Speech.variants(Speech.clean(query))) {
+            for (Version v : searchOne(normalize(variant), max)) {
+                String key = v.kind + (v.tmdb > 0 ? "#" + v.tmdb : v.title + " " + v.year);
+                if (seenKeys.add(key)) out.add(v);
+            }
+            if (out.size() >= max) break;
+        }
+        return out.size() > max ? new ArrayList<>(out.subList(0, max)) : out;
+    }
+
+    private List<Version> searchOne(String q, int max) {
         List<Version> out = new ArrayList<>();
         if (q.isEmpty()) return out;
         Map<String, Version> seen = new HashMap<>();
@@ -237,7 +251,9 @@ final class Iptv {
      * once; closest first, then the title with the most copies (the better known). For "Você quis dizer".
      */
     List<String> soundsLike(String heard, int max) {
-        String q = normalize(heard);
+        List<String> vs = Speech.variants(Speech.clean(heard));
+        String q = normalize(vs.get(vs.size() > 1 ? 1 : 0));   // with the numbers in digits, as titles have them
+        String qs = Speech.sound(q);
         List<String> out = new ArrayList<>();
         if (q.length() < 3) return out;
         int words = q.split(" ").length, limit = q.length() <= 5 ? 2 : q.length() <= 10 ? 3 : 4;
@@ -259,6 +275,8 @@ final class Iptv {
                     int[] had = found.get(start);
                     if (had != null) { had[1]++; continue; }
                     int d = distance(q, start, limit);
+                    // Sounds alike though written apart ("xuxa" / "chucha", "bebe" / "bebê"): close too.
+                    if (d > limit && distance(qs, Speech.sound(start), 1) <= 1) d = limit;
                     if (d > limit) continue;
                     found.put(start, new int[] {d, 1});
                     shown.put(start, w.length == words ? display(v) : capitalize(start));
@@ -298,11 +316,13 @@ final class Iptv {
 
     /** True if a title in your lists is exactly these words (not just containing them). */
     boolean hasTitle(String heard) {
-        String q = normalize(heard);
-        if (q.isEmpty()) return false;
         List<Map<String, List<Version>>> all;
         synchronized (this) { all = new ArrayList<>(indexes.values()); }
-        for (Map<String, List<Version>> idx : all) if (idx.containsKey("movie:" + q) || idx.containsKey("tv:" + q)) return true;
+        for (String variant : Speech.variants(Speech.clean(heard))) {
+            String q = normalize(variant);
+            if (q.isEmpty()) continue;
+            for (Map<String, List<Version>> idx : all) if (idx.containsKey("movie:" + q) || idx.containsKey("tv:" + q)) return true;
+        }
         return false;
     }
 

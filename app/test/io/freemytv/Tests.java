@@ -16,6 +16,7 @@ public final class Tests {
         channels();
         games();
         names();
+        speech();
         System.out.println(run + " checks, " + failed + " failed");
         if (failed > 0) System.exit(1);
     }
@@ -118,6 +119,26 @@ public final class Tests {
         same(g.state(noon + 5 * 3600_000L), Lineup.ENDED, "3 h after: finished");
         Lineup.Channel ch = new Lineup.Channel();
         same(ch.state(noon), Lineup.ALWAYS, "a channel is always on");
+    }
+
+    // Brazilian Portuguese said to the TV.
+    private static void speech() {
+        same(Speech.clean("quero assistir Duna"), "duna", "command off");
+        same(Speech.clean("coloca na Globo"), "globo", "coloca na");
+        same(Speech.clean("abre o canal esporte vê"), "sportv", "esporte vê is SporTV");
+        same(Speech.clean("esporte vê dois"), "sportv 2", "SporTV 2 said");
+        same(Speech.clean("agá bê ó"), "hbo", "HBO spelled");
+        same(Speech.clean("esse bê tê"), "sbt", "SBT spelled");
+        same(Speech.clean("Duna"), "duna", "a name stays");
+        same(Speech.clean("O Poderoso Chefão"), "poderoso chefao", "article off, still found by contains");
+        check(Speech.variants("Duna parte dois").contains("duna parte 2"), "numbers in words become digits");
+        check(Speech.variants("Rocky três").contains("rocky iii"), "and Roman numerals");
+        check(Speech.variants("Uma Noite no Museu").contains("uma noite no museu"), "a leading article stays a word");
+        same(Speech.sound("Xuxa"), Speech.sound("Chucha"), "x and ch sound alike");
+        same(Speech.sound("Brasil"), Speech.sound("Brasiu"), "a closing l sounds like u");
+        same(Speech.sound("Cinema"), Speech.sound("Sinema"), "c before i is s");
+        same(Speech.sound("Quero"), Speech.sound("Keru"), "qu is k, a final o is u");
+        check(Speech.sound("Duna").length() > 0 && !Speech.sound("Duna").equals(Speech.sound("Bruna")), "Duna and Bruna differ");
     }
 
     // Titles found by name across lists: the decorations come off.
