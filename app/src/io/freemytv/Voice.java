@@ -16,6 +16,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Voice search inside the app, with Android's own speech recognition (no Gemini or Assistant screen): a small
@@ -47,6 +48,9 @@ final class Voice {
     }
 
     static boolean listening() { return current != null; }
+
+    /** Everything the recognizer thought it heard last time, most likely first ("Dona", "Duna", "Luna"). */
+    static final List<String> heardAlso = new ArrayList<>();
 
     /** For screens without their own search: the mic button opens Movies & Shows on Buscar, listening. */
     static boolean openSearch(Activity a, KeyEvent e) {
@@ -178,6 +182,8 @@ final class Voice {
                 finished = true;
                 ArrayList<String> said = b.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
                 String text = said == null || said.isEmpty() ? "" : said.get(0).trim();
+                heardAlso.clear();
+                if (said != null) for (String x : said) if (x != null && !x.trim().isEmpty() && !heardAlso.contains(x.trim())) heardAlso.add(x.trim());
                 stop();
                 if (!text.isEmpty()) heard.done(text);
             }
@@ -193,7 +199,7 @@ final class Voice {
                 .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
                 .putExtra(RecognizerIntent.EXTRA_LANGUAGE, "pt-BR")
                 .putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-                .putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+                .putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
                 .putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, activity.getPackageName());
         try {
             recognizer.startListening(i);

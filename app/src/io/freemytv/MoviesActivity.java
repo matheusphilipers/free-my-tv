@@ -1136,7 +1136,46 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
         }
 
         void listenNow() {
-            listen(text -> { box.setText(text); box.setSelection(text.length()); handler.removeCallbacks(run); run(); });
+            listen(text -> {
+                String pick = pickHeard(text);
+                box.setText(pick);
+                box.setSelection(pick.length());
+                handler.removeCallbacks(run);
+                run();
+            });
+        }
+
+        /**
+         * Of what the microphone thought it heard ("Dona", "Duna", "Luna"), the first that is something on your lists
+         * (a channel, a movie or show, a kind of title); else the most likely one.
+         */
+        private String pickHeard(String first) {
+            Iptv iptv = Iptv.get(MoviesActivity.this);
+            Lineup lineup = Lineup.ready(MoviesActivity.this);
+            for (String a : new ArrayList<>(Voice.heardAlso)) {
+                if (Ask.understand(a) != null || (lineup != null && !lineup.search(a, 1).isEmpty()) || !iptv.search(a, 1).isEmpty()) return a;
+            }
+            return first;
+        }
+
+        /** "Ouvi também: Duna · Luna": the microphone's other guesses, one OK away. */
+        private void heardAlso(String q) {
+            List<String> others = new ArrayList<>();
+            boolean ours = false;
+            for (String a : Voice.heardAlso) {
+                if (a.equalsIgnoreCase(q)) ours = true;
+                else if (others.size() < 4) others.add(a);
+            }
+            if (!ours || others.isEmpty()) return;
+            LinearLayout line = ui.row();
+            line.setClipChildren(false);
+            line.addView(ui.text("Ouvi também:", 19, Ui.medium, ui.dim), ui.margins(WRAP, WRAP, 4, 0, 14, 0));
+            for (String a : others) {
+                TvUi.Chip c = ui.chip(a, false, null);
+                c.setOnClickListener(v -> { box.setText(a); box.setSelection(a.length()); handler.removeCallbacks(run); run(); });
+                line.addView(c, ui.margins(WRAP, WRAP, 0, 0, 10, 0));
+            }
+            results.addView(line, ui.margins(WRAP, WRAP, 0, 4, 0, 14));
         }
 
         private void run() {
@@ -1144,6 +1183,7 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
             int gen = ++generation;
             results.removeAllViews();
             if (q.length() < 2) return;
+            heardAlso(q);
             // What the words mean decides the order: a channel group ("jogos de hoje"), a team ("Galo"), a channel's
             // name, or a title. Sections say what they are: Ao vivo agora, Filmes / Séries nas suas listas, Pessoas,
             // Fora das suas listas.
@@ -1182,10 +1222,20 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
                 if (gen != generation) return;
                 results.removeView(wait);
                 if (found == null) return;
-                if (!found.people.isEmpty()) peopleRow(found.people);
-                List<Movies.Title> others = new ArrayList<>();
-                for (Movies.Title t : found.titles) if (!iptv.has(t)) others.add(t);
+                // A name said or typed is most often a title: titles whose name is exactly it first, people after
+                // (the catalog's search is loose: "Duna" also brings a "Bruna").
+                String exact = Iptv.normalize(q);
+                List<Movies.Title> others = new ArrayList<>(), first = new ArrayList<>();
+                for (Movies.Title t : found.titles) {
+                    if (iptv.has(t)) continue;
+                    (Iptv.normalize(t.name).equals(exact) || Iptv.normalize(t.original).equals(exact) || Iptv.normalize(t.name).startsWith(exact + " ") ? first : others).add(t);
+                }
+                others.addAll(0, first);
+                boolean person = false;
+                for (Movies.Person p : found.people) if (Iptv.normalize(p.name).startsWith(exact)) person = true;
+                if (person && !found.people.isEmpty()) peopleRow(found.people);
                 if (others.isEmpty()) {
+                    if (!person && !found.people.isEmpty()) peopleRow(found.people);
                     if (results.getChildCount() == 0) results.addView(ui.text("Nada encontrado para “" + q + "”.", 21, Ui.medium, ui.dim), ui.margins(WRAP, WRAP, 4, 20, 0, 0));
                     return;
                 }
@@ -1209,6 +1259,7 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
                     r.addView(ui.card(t, w, () -> TvUi.open(MoviesActivity.this, t)), ui.margins(w, WRAP, 0, 0, 24, 0));
                 }
                 results.addView(grid);
+                if (!person && !found.people.isEmpty()) peopleRow(found.people);
             });
         }
 
@@ -1399,7 +1450,15 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
 
     /** The remote's microphone: open Buscar and listen, wherever you are on this screen. */
     @Override public void voiceSearch() {
-        if (tab == T_LIVE && live != null) { Voice.listen(this, live::search); return; }   // on Ao vivo: channels
+        if (tab == T_LIVE && live != null) {   // on Ao vivo: channels (of what was heard, the guess that is a channel)
+            Voice.listen(this, text -> {
+                Lineup l = Lineup.ready(this);
+                String pick = text;
+                if (l != null) for (String x : new ArrayList<>(Voice.heardAlso)) if (!l.search(x, 1).isEmpty()) { pick = x; break; }
+                live.search(pick);
+            });
+            return;
+        }
         int at = tabIds.indexOf(T_SEARCH);
         if (tab != T_SEARCH && at >= 0) { show(T_SEARCH); tabs.get(at).requestFocus(); }
         if (search != null) search.listenNow();
