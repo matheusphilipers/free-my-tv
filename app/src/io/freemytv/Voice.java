@@ -184,6 +184,7 @@ final class Voice {
                 String text = said == null || said.isEmpty() ? "" : said.get(0).trim();
                 heardAlso.clear();
                 if (said != null) for (String x : said) if (x != null && !x.trim().isEmpty() && !heardAlso.contains(x.trim())) heardAlso.add(x.trim());
+                AppLog.w("voice: heard " + heardAlso);
                 stop();
                 if (!text.isEmpty()) heard.done(text);
             }

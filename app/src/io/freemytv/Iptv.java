@@ -231,6 +231,81 @@ final class Iptv {
         return out.size() > max ? new ArrayList<>(out.subList(0, max)) : out;
     }
 
+    /**
+     * Titles of your lists that sound like what was heard but aren't it ("Bruna" → "Duna", "Dona" → "Duna"): the
+     * microphone often swaps a letter or two. Compared on the title's first words (as many as were said), each
+     * once; closest first, then the title with the most copies (the better known). For "Você quis dizer".
+     */
+    List<String> soundsLike(String heard, int max) {
+        String q = normalize(heard);
+        List<String> out = new ArrayList<>();
+        if (q.length() < 3) return out;
+        int words = q.split(" ").length, limit = q.length() <= 5 ? 2 : q.length() <= 10 ? 3 : 4;
+        Map<String, int[]> found = new HashMap<>();   // title start → {distance, copies}
+        Map<String, String> shown = new HashMap<>();
+        List<Map<String, List<Version>>> all;
+        synchronized (this) { all = new ArrayList<>(categories.values()); }
+        for (Map<String, List<Version>> cats : all) {
+            for (Map.Entry<String, List<Version>> e : cats.entrySet()) {
+                if (e.getKey().startsWith("live|")) continue;
+                for (Version v : e.getValue()) {
+                    if (v.title.isEmpty()) continue;
+                    String[] w = v.title.split(" ");
+                    if (w.length < words) continue;
+                    StringBuilder b = new StringBuilder();
+                    for (int i = 0; i < words; i++) b.append(i == 0 ? "" : " ").append(w[i]);
+                    String start = b.toString();
+                    if (start.equals(q) || Math.abs(start.length() - q.length()) > limit) continue;
+                    int[] had = found.get(start);
+                    if (had != null) { had[1]++; continue; }
+                    int d = distance(q, start, limit);
+                    if (d > limit) continue;
+                    found.put(start, new int[] {d, 1});
+                    shown.put(start, w.length == words ? display(v) : capitalize(start));
+                }
+            }
+        }
+        List<String> keys = new ArrayList<>(found.keySet());
+        Collections.sort(keys, (a, b) -> found.get(a)[0] != found.get(b)[0] ? Integer.compare(found.get(a)[0], found.get(b)[0])
+                : Integer.compare(found.get(b)[1], found.get(a)[1]));
+        for (String k : keys) { if (out.size() >= max) break; out.add(shown.get(k)); }
+        return out;
+    }
+
+    private static String capitalize(String s) {
+        StringBuilder b = new StringBuilder();
+        for (String w : s.split(" ")) b.append(b.length() == 0 ? "" : " ").append(w.isEmpty() ? w : Character.toUpperCase(w.charAt(0)) + w.substring(1));
+        return b.toString();
+    }
+
+    /** Edit distance (letters added, removed or changed), giving up past `limit`. */
+    static int distance(String a, String b, int limit) {
+        int[] prev = new int[b.length() + 1], cur = new int[b.length() + 1];
+        for (int j = 0; j <= b.length(); j++) prev[j] = j;
+        for (int i = 1; i <= a.length(); i++) {
+            cur[0] = i;
+            int best = cur[0];
+            for (int j = 1; j <= b.length(); j++) {
+                int c = a.charAt(i - 1) == b.charAt(j - 1) ? 0 : 1;
+                cur[j] = Math.min(Math.min(cur[j - 1] + 1, prev[j] + 1), prev[j - 1] + c);
+                best = Math.min(best, cur[j]);
+            }
+            if (best > limit) return limit + 1;
+            int[] t = prev; prev = cur; cur = t;
+        }
+        return prev[b.length()];
+    }
+
+    /** True if a title in your lists is exactly these words (not just containing them). */
+    boolean hasTitle(String heard) {
+        String q = normalize(heard);
+        if (q.isEmpty()) return false;
+        List<Map<String, List<Version>>> all;
+        synchronized (this) { all = new ArrayList<>(indexes.values()); }
+        for (Map<String, List<Version>> idx : all) if (idx.containsKey("movie:" + q) || idx.containsKey("tv:" + q)) return true;
+        return false;
+    }
+
     private volatile int generation;
 
     /** Goes up each time a list's catalog is (re)loaded or a list is removed: the Lineup rebuilds then. */

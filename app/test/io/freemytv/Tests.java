@@ -126,5 +126,8 @@ public final class Tests {
         same(Iptv.normalize("Duna - Parte Dois DUBLADO FHD"), "duna parte dois", "tags out");
         same(Iptv.categoryLabel("✨ •NETFLIX"), "NETFLIX", "category label");
         same(Iptv.categoryKey("•Netflix"), Iptv.categoryKey("NETFLIX"), "same category in two lists");
+        same(Iptv.distance("bruna", "duna", 2), 2, "Bruna is 2 letters from Duna");
+        same(Iptv.distance("dona", "duna", 2), 1, "Dona is 1 letter from Duna");
+        check(Iptv.distance("batman", "duna", 2) > 2, "Batman is far from Duna");
     }
 }

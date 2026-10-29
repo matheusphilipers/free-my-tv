@@ -1152,30 +1152,53 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
         private String pickHeard(String first) {
             Iptv iptv = Iptv.get(MoviesActivity.this);
             Lineup lineup = Lineup.ready(MoviesActivity.this);
-            for (String a : new ArrayList<>(Voice.heardAlso)) {
-                if (Ask.understand(a) != null || (lineup != null && !lineup.search(a, 1).isEmpty()) || !iptv.search(a, 1).isEmpty()) return a;
-            }
+            List<String> heard = new ArrayList<>(Voice.heardAlso);
+            // Best: a guess that is a whole title of your lists ("Duna"), a kind of title, or a channel's name.
+            for (String a : heard) if (iptv.hasTitle(a) || Ask.understand(a) != null || (lineup != null && !lineup.search(a, 1).isEmpty())) return a;
+            // Then: one that is part of a title ("Bruna" is in "Bruna Surfistinha").
+            for (String a : heard) if (!iptv.search(a, 1).isEmpty()) return a;
             return first;
         }
 
-        /** "Ouvi também: Duna · Luna": the microphone's other guesses, one OK away. */
-        private void heardAlso(String q) {
+        /**
+         * "Você quis dizer: Duna · Luna": the microphone's other guesses, and titles of your lists that sound like
+         * what was heard ("Bruna" → "Duna"), one OK away.
+         */
+        private void heardAlso(String q, int gen) {
             List<String> others = new ArrayList<>();
             boolean ours = false;
             for (String a : Voice.heardAlso) {
                 if (a.equalsIgnoreCase(q)) ours = true;
-                else if (others.size() < 4) others.add(a);
+                else if (others.size() < 3) others.add(a);
             }
-            if (!ours || others.isEmpty()) return;
+            if (!ours) others.clear();
             LinearLayout line = ui.row();
             line.setClipChildren(false);
-            line.addView(ui.text("Ouvi também:", 19, Ui.medium, ui.dim), ui.margins(WRAP, WRAP, 4, 0, 14, 0));
-            for (String a : others) {
-                TvUi.Chip c = ui.chip(a, false, null);
-                c.setOnClickListener(v -> { box.setText(a); box.setSelection(a.length()); handler.removeCallbacks(run); run(); });
-                line.addView(c, ui.margins(WRAP, WRAP, 0, 0, 10, 0));
-            }
-            results.addView(line, ui.margins(WRAP, WRAP, 0, 4, 0, 14));
+            line.addView(ui.text("Você quis dizer:", 19, Ui.medium, ui.dim), ui.margins(WRAP, WRAP, 4, 0, 14, 0));
+            line.setVisibility(others.isEmpty() ? View.GONE : View.VISIBLE);
+            for (String a : others) addGuess(line, a);
+            results.addView(line, 0, ui.margins(WRAP, WRAP, 0, 4, 0, 14));
+            // Titles of your lists that sound like it, when it isn't a title itself (off the main thread: it goes
+            // through every title).
+            Iptv iptv = Iptv.get(MoviesActivity.this);
+            if (iptv.hasTitle(q) || Ask.understand(q) != null) return;
+            movies.run(() -> iptv.soundsLike(q, 4), like -> {
+                if (gen != generation || like == null) return;
+                for (String t : like) {
+                    boolean dup = false;
+                    for (String o : others) if (Iptv.normalize(o).equals(Iptv.normalize(t))) dup = true;
+                    if (dup || others.size() >= 6) continue;
+                    others.add(t);
+                    addGuess(line, t);
+                }
+                if (!others.isEmpty()) line.setVisibility(View.VISIBLE);
+            });
+        }
+
+        private void addGuess(LinearLayout line, String a) {
+            TvUi.Chip c = ui.chip(a, false, null);
+            c.setOnClickListener(v -> { box.setText(a); box.setSelection(a.length()); handler.removeCallbacks(run); run(); });
+            line.addView(c, ui.margins(WRAP, WRAP, 0, 0, 10, 0));
         }
 
         private void run() {
@@ -1183,7 +1206,7 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
             int gen = ++generation;
             results.removeAllViews();
             if (q.length() < 2) return;
-            heardAlso(q);
+            heardAlso(q, gen);
             // What the words mean decides the order: a channel group ("jogos de hoje"), a team ("Galo"), a channel's
             // name, or a title. Sections say what they are: Ao vivo agora, Filmes / Séries nas suas listas, Pessoas,
             // Fora das suas listas.
