@@ -124,7 +124,7 @@ final class Voice {
         hint = ui.text("OUVINDO", 19, Ui.semibold, TvUi.ACCENT);
         hint.setLetterSpacing(0.12f);
         text.addView(hint);
-        words = ui.line("Fale o nome de um filme, série, ator ou canal", 46, Ui.semibold, 0x8CFFFFFF, 2);
+        words = ui.line("Fale um filme, série, ator, canal ou gênero (“filmes de suspense”)", 46, Ui.semibold, 0x8CFFFFFF, 2);
         words.setLineSpacing(ui.px(4), 1f);
         text.addView(words, ui.margins(ui.px(1300), TvUi.WRAP, 0, 12, 0, 0));
         TextView back = ui.text("Aperte o microfone de novo ou VOLTAR para cancelar", 18, Ui.medium, 0x66FFFFFF);
