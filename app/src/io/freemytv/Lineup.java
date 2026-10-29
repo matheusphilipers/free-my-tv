@@ -229,9 +229,14 @@ final class Lineup {
     /** Our groups that have channels, in order. */
     List<String> groupNames() {
         List<String> out = new ArrayList<>();
-        for (String g : GROUPS) if (!group(g).isEmpty()) out.add(g);
+        for (String g : GROUPS) if (!group(g).isEmpty() && (!ADULT.equals(g) || adult())) out.add(g);
         return out;
     }
+
+    /** Adult channels show only when turned on in Ajustes (off at first: a TV the whole family uses). */
+    boolean adult() { return prefs.getBoolean("adult", false); }
+
+    static void setAdult(Context c, boolean on) { c.getSharedPreferences("iptv", Context.MODE_PRIVATE).edit().putBoolean("adult", on).apply(); }
 
     Channel channelOf(Iptv.Version v) { return byVersion.get(v); }
 
@@ -253,7 +258,9 @@ final class Lineup {
         String q = norm(query);
         List<Channel> starts = new ArrayList<>(), rest = new ArrayList<>();
         if (q.length() < 2) return starts;
+        boolean adult = adult();
         for (Channel ch : all) {
+            if (!adult && ADULT.equals(ch.group)) continue;
             String n = norm(ch.name);
             if (n.startsWith(q)) starts.add(ch);
             else if ((" " + n).contains(" " + q)) rest.add(ch);

@@ -893,6 +893,16 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
             uhd.setOnClickListener(v -> { iptv.setPrefer4k(true); hd.set(false); uhd.set(true); });
             for (TvUi.Chip c : new TvUi.Chip[] {dub, leg, hd, uhd}) r.addView(c, ui.margins(WRAP, WRAP, 0, 0, 12, 0));
             p.addView(r, ui.margins(WRAP, WRAP, 0, 18, 0, 0));
+            // Adult channels: hidden until turned on here (Ao vivo, the search and the mosaic leave them out).
+            boolean adultOn = getSharedPreferences("iptv", MODE_PRIVATE).getBoolean("adult", false);
+            TvUi.Chip adult = ui.chip(adultOn ? "Canais adultos: aparecendo" : "Canais adultos: escondidos", adultOn, null);
+            adult.setOnClickListener(v -> {
+                boolean on = !getSharedPreferences("iptv", MODE_PRIVATE).getBoolean("adult", false);
+                Lineup.setAdult(this, on);
+                adult.setText(on ? "Canais adultos: aparecendo" : "Canais adultos: escondidos");
+                adult.set(on);
+            });
+            p.addView(adult, ui.margins(WRAP, WRAP, 0, 12, 0, 0));
         }
         // Add a list.
         p.addView(ui.text(iptv.connected() ? "ADICIONAR OUTRA LISTA" : "ADICIONAR UMA LISTA", 16, Ui.semibold, ui.dim), ui.margins(WRAP, WRAP, 0, 26, 0, 6));
