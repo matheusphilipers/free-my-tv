@@ -113,7 +113,13 @@ final class Lineup {
     private static int cachedGen = -1;
 
     /** The lineup of your lists as they are now (rebuilt after a list changes). */
-    static synchronized Lineup get(Context c) {
+    /** The lineup (built off the main thread; waits for the lists read at start, so it's built once, not once per list). */
+    static Lineup get(Context c) {
+        Iptv.get(c).awaitLoaded();
+        return build(c);
+    }
+
+    private static synchronized Lineup build(Context c) {
         Iptv iptv = Iptv.get(c);
         int gen = iptv.generation();
         if (cached == null || cachedGen != gen) {
@@ -138,8 +144,11 @@ final class Lineup {
 
     private Lineup(Context c, List<Iptv.Version> live) {
         prefs = c.getSharedPreferences("iptv", Context.MODE_PRIVATE);
+        Map<String, String> cats = new HashMap<>();   // each category's normalized name, once
         for (Iptv.Version v : live) {
-            boolean game = isGame(v);
+            String cat = cats.get(v.category);
+            if (cat == null) cats.put(v.category, cat = norm(v.category));
+            boolean game = isGame(v, cat);
             String k = keyOf(v.raw);
             if (k.isEmpty()) continue;
             String key = (game ? "game:" : "") + k;
@@ -148,11 +157,11 @@ final class Lineup {
                 ch = new Channel();
                 ch.key = key;
                 ch.game = game;
-                ch.group = game ? GAMES : groupOf(k, norm(v.category));
+                ch.group = game ? GAMES : groupOf(k, cat);
                 byKey.put(key, ch);
                 all.add(ch);
             } else if (OTHER.equals(ch.group) && !game) {
-                ch.group = groupOf(k, norm(v.category));   // another list's category may tell more
+                ch.group = groupOf(k, cat);   // another list's category may tell more
             }
             ch.versions.add(v);
             byVersion.put(v, ch);
@@ -497,15 +506,22 @@ final class Lineup {
         return k.endsWith(" 1") && k.length() > 2 ? k.substring(0, k.length() - 2) : k;   // "SporTV 1" is SporTV
     }
 
+    // Compiled once: this runs for every channel of every list when the lineup is built.
+    private static final Pattern EMPTY_BRACKETS = Pattern.compile("\\(\\s*\\)|\\[\\s*\\]"), DASHES = Pattern.compile("\\s*-\\s*(-\\s*)+"),
+            SPACES = Pattern.compile("\\s+"), EDGES = Pattern.compile("^[\\s\\-]+|[\\s\\-]+$");
+
     static String displayName(String raw, boolean game) {
         String s = TAGS.matcher(PREFIX.matcher(raw).replaceFirst("")).replaceAll(" ");
-        s = s.replaceAll("\\(\\s*\\)|\\[\\s*\\]", " ").replaceAll("\\s*-\\s*(-\\s*)+", " - ").replaceAll("\\s+", " ");
-        s = s.replaceAll("^[\\s\\-]+|[\\s\\-]+$", "");
+        s = SPACES.matcher(DASHES.matcher(EMPTY_BRACKETS.matcher(s).replaceAll(" ")).replaceAll(" - ")).replaceAll(" ");
+        s = EDGES.matcher(s).replaceAll("");
         return s.isEmpty() ? raw.trim() : s;
     }
 
-    static boolean isGame(Iptv.Version v) {
-        String cat = norm(v.category);
+    static boolean isGame(Iptv.Version v) { return isGame(v, norm(v.category)); }
+
+    private static boolean isGame(Iptv.Version v, String cat) {
+        // Quick no: a game's name has " x " (most channels don't, and the pattern below is slow).
+        if (v.raw.indexOf(" x ") < 0 && v.raw.indexOf(" X ") < 0) return false;
         boolean matchup = GAME.matcher(v.raw).find();
         return matchup && (cat.contains("jogo") || cat.contains("futebol") || cat.contains("ppv") || cat.contains("evento") || TIME.matcher(v.raw).find());
     }

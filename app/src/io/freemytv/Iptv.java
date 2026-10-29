@@ -155,11 +155,25 @@ final class Iptv {
         java.io.File[] idx = c.getFilesDir().listFiles((d, name) -> name.startsWith("iptv-"));
         AppLog.w("iptv: " + sources.size() + " lists saved (" + prefs.getString("sources", "").length() + " chars); index files: "
                 + (idx == null ? 0 : idx.length) + " · process " + android.app.Application.getProcessName());
-        io.execute(() -> { for (Source s : sources()) loadIndex(s); changed(); });
+        io.execute(() -> {
+            for (Source s : sources()) loadIndex(s);
+            loaded.countDown();
+            changed();
+            Lineup.get(context);   // ready before Ao vivo or a search asks for it
+        });
         // Once a day: the first time the TV is on after 24 h (refresh below, from the home screen), and on its own
         // while it stays on (this check, every hour).
         main.postDelayed(daily, 60 * 60_000L);
         main.post(() -> refresh(false));
+    }
+
+    // The lists' indexes are read from disk once when the app starts.
+    private final java.util.concurrent.CountDownLatch loaded = new java.util.concurrent.CountDownLatch(1);
+
+    /** Waits (off the main thread) until the lists saved on the TV are read, at most 40 s. */
+    void awaitLoaded() {
+        if (Looper.myLooper() == Looper.getMainLooper()) return;
+        try { loaded.await(40, java.util.concurrent.TimeUnit.SECONDS); } catch (InterruptedException ignored) {}
     }
 
     private final Runnable daily = new Runnable() {
@@ -417,6 +431,7 @@ final class Iptv {
             s.liveAt = System.currentTimeMillis();
             save();
             loadIndex(s);
+            Lineup.get(context);
         } finally {
             tmp.delete();
             s.loading = false;
@@ -504,6 +519,7 @@ final class Iptv {
             s.at = s.liveAt = System.currentTimeMillis();
             save();
             loadIndex(s);
+            Lineup.get(context);
         } finally {
             s.loading = false;
             changed();
