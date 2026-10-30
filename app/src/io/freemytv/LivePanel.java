@@ -346,11 +346,11 @@ final class LivePanel {
             int st = all.get(i).state(now);
             if (st != last) {
                 last = st;
-                String title = st == Lineup.LIVE ? "Ao vivo agora" : st == Lineup.PRE ? "Mais tarde" : st == Lineup.ENDED ? "Encerrados" : "Outros";
+                String title = st == Lineup.LIVE ? "Ao vivo agora" : st == Lineup.PRE ? "Mais tarde" : st == Lineup.ENDED ? "Encerrados há pouco" : "Canais de eventos";
                 LinearLayout head = ui.row();
                 TextView t = ui.text(title, 24, Ui.semibold, st == Lineup.LIVE ? 0xFFE5252A : ui.ink);
                 head.addView(t);
-                head.addView(ui.text(counts[st] + (counts[st] == 1 ? " jogo" : " jogos"), 18, Ui.medium, ui.dim), ui.margins(WRAP, WRAP, 12, 0, 0, 0));
+                head.addView(ui.text(counts[st] + (st == Lineup.ALWAYS ? (counts[st] == 1 ? " canal" : " canais") : counts[st] == 1 ? " evento" : " eventos"), 18, Ui.medium, ui.dim), ui.margins(WRAP, WRAP, 12, 0, 0, 0));
                 list.addView(head, ui.margins(MATCH, WRAP, 6, list.getChildCount() == 0 ? 2 : 22, 0, 12));
                 pair = null;
             }
@@ -458,6 +458,9 @@ final class LivePanel {
         }, programs -> {
             if (gen != generation || !alive) return;
             if (programs == null || programs.isEmpty()) { guideNow.setText("Sem programação para este canal."); return; }
+            // An event: the guide says when it ends (the list's "Encerrados" follows it, not a usual length).
+            long at = ch.startsAt();
+            if (ch.game && at > 0) for (Iptv.Program p : programs) if (p.start <= at + 15 * 60_000L && p.end > at) { ch.endAt = p.end; break; }
             StringBuilder s = new StringBuilder();
             java.text.SimpleDateFormat hm = new java.text.SimpleDateFormat("HH:mm", Locale.US);
             long now = System.currentTimeMillis();

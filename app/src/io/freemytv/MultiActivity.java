@@ -548,7 +548,7 @@ public class MultiActivity extends Activity {
         List<String> names = new ArrayList<>();
         names.add("Sugeridos");
         names.add(LivePanel.FAV);
-        names.add("Jogos ao vivo");
+        names.add("Eventos ao vivo");
         for (String g : lineup.groupNames()) if (!g.equals(Lineup.GAMES)) names.add(g);
         final List<TvUi.Chip> catChips = new ArrayList<>();
         final Runnable[] refill = {null};
@@ -576,7 +576,7 @@ public class MultiActivity extends Activity {
             long when = System.currentTimeMillis();
             if (q.length() >= 2) list.addAll(lineup.search(q, 40));
             else if (LivePanel.FAV.equals(cat[0])) list.addAll(lineup.favourites());
-            else if ("Jogos ao vivo".equals(cat[0])) { for (Lineup.Channel ch : lineup.group(Lineup.GAMES)) if (ch.state(when) == Lineup.LIVE) list.add(ch); }
+            else if ("Eventos ao vivo".equals(cat[0])) { for (Lineup.Channel ch : lineup.group(Lineup.GAMES)) if (ch.state(when) == Lineup.LIVE) list.add(ch); }
             else if (cat[0] != null) { List<Lineup.Channel> g = lineup.group(cat[0]); list.addAll(g.subList(0, Math.min(150, g.size()))); }
             else {
                 list.addAll(lineup.favourites());

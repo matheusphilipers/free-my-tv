@@ -96,6 +96,24 @@ public final class Tests {
         same(group("Globo Minas", "ABERTOS"), Lineup.OPEN, "Globo is Abertos");
         same(group("Telecine Action", ""), Lineup.MOVIES, "Telecine is Canais de filmes");
         same(Lineup.groupFor("canais 24 horas"), Lineup.H24, "voice: canais 24 horas");
+        same(group("F1 TV ONBOARD VERSTAPPEN", "FORMULA 1"), Lineup.F1, "a driver's camera is Fórmula 1");
+        same(group("F1 TV", ""), Lineup.F1, "F1 TV is Fórmula 1");
+        same(Lineup.groupFor("eventos do dia"), Lineup.GAMES, "voice: eventos do dia");
+        same(Lineup.groupFor("fórmula 1"), Lineup.F1, "voice: fórmula 1");
+        check(Lineup.length("Flamengo x Palmeiras") == 135 * 60_000L, "a football match lasts 2 h 15");
+        check(Lineup.length("MotoGP Tailândia") == 75 * 60_000L, "a MotoGP race 1 h 15");
+        check(Lineup.length("UFC 310") == 300 * 60_000L, "a UFC card 5 h");
+        check(Lineup.isGame(version("Disney+ 03", "DISNEY+ PPV")), "a PPV category's channel is an event");
+        check(Lineup.isGame(version("MotoGP - GP da Tailândia 03:00", "ESPORTES")), "a race with a time is an event");
+        check(Lineup.isGame(version("BAH x SAO - 21h30", "JOGOS DO DIA")), "a game is an event");
+        check(!Lineup.isGame(version("SporTV 2", "ESPORTES")), "a sports channel isn't");
+    }
+
+    private static Iptv.Version version(String raw, String category) {
+        Iptv.Version v = new Iptv.Version();
+        v.raw = raw;
+        v.category = category;
+        return v;
     }
 
     private static String group(String raw, String category) { return Lineup.groupOf(Lineup.keyOf(raw), Lineup.norm(category)); }

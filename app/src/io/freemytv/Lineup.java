@@ -25,21 +25,22 @@ import java.util.regex.Pattern;
  * the same whatever each provider calls its categories. Built off the main thread (get() can take a moment the first time).
  */
 final class Lineup {
-    static final String GAMES = "Jogos de hoje", OPEN = "Abertos", SPORTS = "Esportes", MOVIES = "Canais de filmes", SOAPS = "Novelas e realities",
+    static final String GAMES = "Eventos do dia", F1 = "Fórmula 1", OPEN = "Abertos", SPORTS = "Esportes", MOVIES = "Canais de filmes", SOAPS = "Novelas e realities",
             NEWS = "Notícias", KIDS = "Infantil", DOCS = "Documentários", SHOWS = "Variedades", MUSIC = "Música", FAITH = "Religiosos", OTHER = "Outros",
             H24 = "Canais 24 horas", STREAMS = "Streamings ao vivo", ADULT = "Adultos";
-    static final String[] GROUPS = {GAMES, OPEN, SPORTS, STREAMS, MOVIES, H24, SOAPS, NEWS, KIDS, DOCS, SHOWS, MUSIC, FAITH, ADULT, OTHER};
+    static final String[] GROUPS = {GAMES, F1, OPEN, SPORTS, STREAMS, MOVIES, H24, SOAPS, NEWS, KIDS, DOCS, SHOWS, MUSIC, FAITH, ADULT, OTHER};
 
     /** One channel, with its sources (lists and qualities), best first. */
     static final int PRE = 0, LIVE = 1, ENDED = 2, ALWAYS = 3;
     /** A game is on from its start until about 2 h 45 later (extra time, the post-game); before that it hasn't started. */
-    static final long GAME_LENGTH = 165 * 60_000L, OPENS_BEFORE = 20 * 60_000L;
+    static final long GAME_LENGTH = 150 * 60_000L, OPENS_BEFORE = 20 * 60_000L, ENDED_SHOWN = 60 * 60_000L;
 
     static final class Channel {
         String key, name = "", group = OTHER, icon = "";
         boolean game;
         int start = -1;   // a game's start, in minutes after midnight (from "21h30" in its name); -1: none
         int day = -1, month = -1;   // its date, when the name has one ("28/10 21:30 …")
+        long endAt;   // when the guide says it ends (0: not known; then a usual length for the sport)
         final List<Iptv.Version> versions = new ArrayList<>(2);
 
         /** Today's start of the game (epoch ms), or 0. */
@@ -65,7 +66,14 @@ final class Lineup {
             long at = startsAt();
             if (at == 0) return ALWAYS;
             if (now < at - OPENS_BEFORE) return PRE;
-            return now < at + GAME_LENGTH ? LIVE : ENDED;
+            return now < endsAt() ? LIVE : ENDED;
+        }
+
+        /** The end: the guide's when known, else the start plus how long that sport usually takes. */
+        long endsAt() {
+            long at = startsAt();
+            if (endAt > at) return endAt;
+            return at + length(name + " " + (versions.isEmpty() ? "" : versions.get(0).category));
         }
 
         /** "21:30" */
@@ -137,6 +145,22 @@ final class Lineup {
     }
 
     final List<Channel> all = new ArrayList<>();
+    /** How long an event usually lasts, by what it is: a football match 2 h 15 (with the break and added time), a race 2 h... */
+    static long length(String text) {
+        String n = " " + norm(text) + " ";
+        long min;
+        if (has(n, "ufc", "boxe", "boxing", "luta", "lutas", "mma", "pfl", "bellator", "wwe", "card")) min = 300;
+        else if (has(n, "nfl", "super bowl", "futebol americano")) min = 210;
+        else if (has(n, "nba", "nbb", "basquete", "basket", "mlb", "beisebol", "baseball", "nhl", "hockey", "hoquei")) min = 170;
+        else if (has(n, "tenis", "atp", "wta")) min = 180;
+        else if (has(n, "nascar", "indy", "indycar", "stock car", "wec", "le mans")) min = 210;
+        else if (has(n, "motogp", "moto gp", "moto2", "moto3", "superbike", "wsbk")) min = 75;
+        else if (has(n, "f1", "formula 1", "formula one", "gp", "grande premio", "formula e", "f2", "f3")) min = 135;
+        else if (has(n, "volei", "volleyball", "superliga")) min = 150;
+        else min = 135;   // football and the rest: 90 minutes, the break, added time
+        return min * 60_000L;
+    }
+
     private final Map<String, Channel> byKey = new HashMap<>();
     private final Map<String, List<Channel>> groups = new LinkedHashMap<>();
     private final Map<Iptv.Version, Channel> byVersion = new IdentityHashMap<>();
@@ -187,9 +211,10 @@ final class Lineup {
         List<Channel> l = groups.get(name);
         if (l == null) return Collections.emptyList();
         if (!GAMES.equals(name)) return l;
-        // Today's games: on now first, then the next ones by time, the finished ones last.
+        // Today's events: on now first, then the next ones by time, the ones just finished last (gone an hour after).
         long now = System.currentTimeMillis();
-        List<Channel> out = new ArrayList<>(l);
+        List<Channel> out = new ArrayList<>();
+        for (Channel ch : l) if (ch.state(now) != ENDED || now - ch.endsAt() < ENDED_SHOWN) out.add(ch);
         Collections.sort(out, (a, b) -> {
             int sa = rank(a.state(now)), sb = rank(b.state(now));
             return sa != sb ? Integer.compare(sa, sb) : Integer.compare(a.start, b.start);
@@ -200,16 +225,11 @@ final class Lineup {
     /**
      * Shows why a game can't be watched now (it starts later, or it's over) and returns true; false: go ahead and play.
      */
+    /** Never stops you from going in (the provider may open the channel early, or late): it only says when it starts or ended. */
     static boolean notNow(android.content.Context c, Channel ch) {
         int st = ch.state(System.currentTimeMillis());
-        if (st == PRE) {
-            android.widget.Toast.makeText(c, "Esse jogo começa às " + ch.time() + ". O canal costuma abrir uns 20 minutos antes.", android.widget.Toast.LENGTH_LONG).show();
-            return true;
-        }
-        if (st == ENDED) {
-            android.widget.Toast.makeText(c, "Esse jogo já terminou (começou às " + ch.time() + ").", android.widget.Toast.LENGTH_LONG).show();
-            return true;
-        }
+        if (st == PRE) android.widget.Toast.makeText(c, "Começa às " + ch.time() + ". Se o canal ainda não abriu, tente perto da hora.", android.widget.Toast.LENGTH_LONG).show();
+        else if (st == ENDED) android.widget.Toast.makeText(c, "Esse evento já terminou (começou às " + ch.time() + ").", android.widget.Toast.LENGTH_SHORT).show();
         return false;
     }
 
@@ -289,7 +309,9 @@ final class Lineup {
         String q = (" " + full + " ").replace(" canais de ", " ").replace(" canal de ", " ").replace(" canais ", " ").replace(" canal ", " ").trim();
         if (full.isEmpty()) return null;
         String[][] map = {
-                {GAMES, "jogos de hoje", "jogo de hoje", "jogos do dia", "jogo do dia", "jogos hoje", "jogos", "jogos ao vivo", "futebol hoje", "partidas de hoje"},
+                {GAMES, "eventos do dia", "eventos", "evento", "eventos de hoje", "jogos de hoje", "jogo de hoje", "jogos do dia", "jogo do dia",
+                        "jogos hoje", "jogos", "jogos ao vivo", "futebol hoje", "partidas de hoje", "corridas", "corrida", "ppv"},
+                {F1, "formula 1", "formula um", "f1", "canais de formula 1", "cameras dos pilotos", "camera dos pilotos", "onboard"},
                 {OPEN, "abertos", "aberto", "abertas", "aberta", "tv aberta", "canais abertos", "regionais"},
                 {SPORTS, "esportes", "esporte", "esportivos", "esportivo", "futebol"},
                 {MOVIES, "canais de filmes", "canal de filmes", "filmes ao vivo"},
@@ -537,7 +559,22 @@ final class Lineup {
 
     static boolean isGame(Iptv.Version v) { return isGame(v, norm(v.category)); }
 
+    // The providers' event categories (pay-per-view, "Disney+ PPV", "Eventos"): what's on in them today goes to Eventos.
+    private static boolean eventCategory(String cat) {
+        String c = " " + cat + " ";
+        return has(c, "ppv", "pay per view", "evento", "eventos", "eventos do dia", "jogos do dia", "events", "live events");
+    }
+
+    // Races and other sports that aren't "A x B" ("MotoGP - GP da Tailândia 03:00", "NASCAR 16h"): an event when the
+    // name has a time.
+    private static final Set<String> MOTOR = new HashSet<>(java.util.Arrays.asList("motogp", "moto2", "moto3", "nascar", "indycar", "indy",
+            "f1", "formula", "wec", "superbike", "wsbk", "stock", "rally", "dakar", "ufc", "nba", "nfl", "nhl", "mlb", "wwe", "boxe", "atp", "wta"));
+
     private static boolean isGame(Iptv.Version v, String cat) {
+        if (eventCategory(cat)) return true;
+        if (TIME.matcher(v.raw).find()) {
+            for (String w : norm(v.raw).split(" ")) if (MOTOR.contains(w)) return true;
+        }
         // Quick no: a game's name has " x " (most channels don't, and the pattern below is slow).
         if (v.raw.indexOf(" x ") < 0 && v.raw.indexOf(" X ") < 0) return false;
         boolean matchup = GAME.matcher(v.raw).find();
@@ -562,6 +599,9 @@ final class Lineup {
 
     static String groupOf(String name, String category) {
         String n = " " + name + " ", c = " " + category + " ";
+        // Formula 1: its channels and the drivers' cameras (onboards), together, easy to find.
+        if (has(n, "f1", "f1 tv", "formula 1", "formula one", "onboard", "on board", "pit lane", "driver tracker", "data channel")
+                || has(c, "f1", "f1 tv", "formula 1", "formula one", "formula1")) return F1;
         if (has(n, "adulto", "adultos", "adult", "xxx", "playboy", "sexy") || has(c, "adulto", "adultos", "adult", "xxx", "18")) return ADULT;
         // The streaming services' own live channels (events, games): "Amazon Prime 01", "Disney+ 2", "HBO Max 3".
         if (starts(n.trim(), "amazon prime", "prime video", "disney plus", "hbo max", "paramount plus", "apple tv", "dazn", "globoplay", "netflix",
