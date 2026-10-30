@@ -36,7 +36,7 @@ proteção de tela e o botão que volta tudo ao normal. Além disso:
 ### Ao vivo: várias assinaturas, uma grade organizada
 - Conecte **mais de uma conta** (cada uma com um nome que você escolhe). O mesmo canal em várias contas, ou em várias
   qualidades, vira **um canal só** com as suas fontes; o app abre pela melhor e, se ela falhar, tenta a próxima sozinho.
-- Os canais ficam em grupos que fazem sentido (**Favoritos**, **Jogos de hoje**, **Abertos**, **Esportes**,
+- Os canais ficam em grupos que fazem sentido (**Favoritos**, **Eventos do dia**, **Fórmula 1**, **Abertos**, **Esportes**,
   **Streamings ao vivo**, **Canais de filmes**, **Canais 24 horas**, **Notícias**, **Infantil**…), seja qual for o nome
   que cada provedor dá às categorias. As categorias originais de cada conta continuam lá, recolhidas.
 - Canais em duas colunas, com o que está passando agora e depois ao lado.
@@ -47,8 +47,11 @@ proteção de tela e o botão que volta tudo ao normal. Além disso:
 - **Segurar OK** num canal: assistir, **escolher a fonte**, favoritar ou pôr no mosaico. A fonte escolhida vira a
   primeira daquele canal.
 
-### Jogos de hoje e "Onde assistir"
-- Os jogos do dia separados em **Ao vivo agora**, **Mais tarde** e **Encerrados**, pelo horário de cada um.
+### Eventos do dia, Fórmula 1 e "Onde assistir"
+- **Eventos do dia:** jogos, corridas (MotoGP, NASCAR, IndyCar, F1…), NBA, NFL, UFC e os canais de pay-per-view das
+  listas, separados em **Ao vivo agora**, **Mais tarde** e **Encerrados há pouco**. O fim segue a programação do canal
+  ou a duração de cada esporte, e o evento some uma hora depois de acabar. Dá para entrar antes de começar.
+- **Fórmula 1:** os canais de F1 e as câmeras dos pilotos num grupo só.
 - **Onde assistir:** para cada jogo, os canais que transmitem (pela programação do [Sofascore](https://www.sofascore.com))
   encontrados nas suas contas, e os apps oficiais instalados na TV que também passam (Globoplay, Prime Video,
   Disney+, Premiere…).
