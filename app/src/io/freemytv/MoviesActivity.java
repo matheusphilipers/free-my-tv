@@ -44,8 +44,12 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
     /** The add-a-list form is on screen: don't rebuild it under the person typing. */
     private boolean typing;
 
+    private long createdAt;
+    private final Runnable rebuildSoon = () -> rebuild();
+
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
+        createdAt = android.os.SystemClock.uptimeMillis();
         Ui.init(this);
         ui = new TvUi(this);
         movies = Movies.get(this);
@@ -125,7 +129,25 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
         int first = getIntent().getIntExtra("tab", T_EXPLORE);
         // Light mode: a TMDB tab (the default, the search, the mic) opens your lists' movies, or Ajustes to add a list.
         if (Lite.on() && (!tabIds.contains(first) || first == T_HOME)) first = lists ? T_IPTV_MOVIES : T_PREFS;
-        show(first);
+        if (Lite.on()) {
+            // The pill shows on the very first frame, exactly where the home screen's was; the tab fills in right after.
+            tab = first;
+            for (int i = 0; i < tabs.size(); i++) tabs.get(i).set(tabIds.get(i) == first);
+            View decor = getWindow().getDecorView();
+            decor.getViewTreeObserver().addOnDrawListener(new android.view.ViewTreeObserver.OnDrawListener() {
+                boolean done;
+                @Override public void onDraw() {
+                    if (done) return;
+                    done = true;
+                    decor.post(() -> {
+                        decor.getViewTreeObserver().removeOnDrawListener(this);
+                        long t = android.os.SystemClock.uptimeMillis();
+                        rebuild();
+                        AppLog.w("assistir: pill in " + (t - createdAt) + " ms, tab built in " + (android.os.SystemClock.uptimeMillis() - t) + " ms");
+                    });
+                }
+            });
+        } else show(first);
         tabs.get(Math.max(0, tabIds.indexOf(tab))).requestFocus();
         if (Lite.on()) return;
         if (getIntent().getBooleanExtra("voice", false)) root.post(this::voiceSearch);
@@ -190,14 +212,47 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
             if (sel >= 0 && sel != at) now.post(() -> tabs.get(sel).requestFocus());
             return;
         }
-        if (id == T_HOME) goHome();
-        else show(id);
+        if (id == T_HOME) {
+            goHome();
+            return;
+        }
+        // The pill answers at once; the tab is built once you stop on it (passing over Ao vivo doesn't build it).
+        if (id == tab) return;
+        tab = id;
+        for (int i = 0; i < tabs.size(); i++) tabs.get(i).set(tabIds.get(i) == id);
+        handler.removeCallbacks(rebuildSoon);
+        handler.postDelayed(rebuildSoon, 220);
     }
 
-    /** Back to the home screen, its pill focused on Home, without an animation (the pill stays put). */
+    /** The home screen's pill opened another tab while this screen was kept: switch to it. */
+    @Override protected void onNewIntent(android.content.Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        if (!Lite.on()) return;
+        int t = intent.getIntExtra("tab", tab);
+        int at = tabIds.indexOf(t);
+        if (at < 0 || t == T_HOME) return;
+        if (t != tab || showOpen) {
+            tab = -1;   // force the rebuild (and close a show's episodes)
+            show(t);
+        }
+        tabs.get(at).requestFocus();
+    }
+
+    /** Kept in the background on a 1 GB box only while there's memory to spare. */
+    @Override public void onTrimMemory(int level) {
+        super.onTrimMemory(level);
+        if (Lite.on() && level >= TRIM_MEMORY_RUNNING_LOW && !hasWindowFocus()) finish();
+    }
+
+    /**
+     * Back to the home screen, its pill focused on Home, without an animation (the pill stays put). This screen is
+     * kept behind it, so the next tab from the home screen's pill opens at once instead of being built again.
+     */
     private void goHome() {
         Lite.navBack = true;
-        finish();
+        handler.removeCallbacks(rebuildSoon);
+        if (!moveTaskToBack(true)) finish();
         overridePendingTransition(0, 0);
     }
 

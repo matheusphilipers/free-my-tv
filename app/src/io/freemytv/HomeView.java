@@ -3669,8 +3669,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (zone != Z_NAV || navIndex <= 0 || !(getContext() instanceof Activity)) return;
         Activity a = (Activity) getContext();
         click.open();
+        // REORDER_TO_FRONT: Assistir kept from the last visit comes back as it was (onNewIntent picks the tab).
         a.startActivity(new android.content.Intent(a, MoviesActivity.class)
-                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK | android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK | android.content.Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                        | android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP)
                 .putExtra("tab", NAV_TAB[navIndex]).putExtra("nav", true));
         a.overridePendingTransition(0, 0);
     }
@@ -3759,7 +3761,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                     } else {
                         navIndex = next;
                         // Like the Apple TV tabs, focusing one opens it; a short wait lets you pass over the tabs.
-                        if (navIndex > 0) handler.postDelayed(openNav, 450);
+                        if (navIndex > 0) handler.postDelayed(openNav, 250);
                     }
                 } else if (dy > 0) {
                     zone = Z_SHELF;
@@ -3772,7 +3774,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 if (dx < 0 && topIndex == 3 && navOn()) {
                     zone = Z_NAV;   // back along the row into the pill
                     navIndex = NAV_COUNT - 1;
-                    handler.postDelayed(openNav, 450);
+                    handler.postDelayed(openNav, 250);
                     break;
                 }
                 if (dx != 0) {

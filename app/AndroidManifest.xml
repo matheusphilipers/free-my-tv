@@ -97,6 +97,7 @@
         <activity
             android:name=".MoviesActivity"
             android:process=":home"
+            android:taskAffinity="io.freemytv.assistir"
             android:windowSoftInputMode="stateHidden|adjustPan"
             android:exported="false"
             android:label="Free My TV"

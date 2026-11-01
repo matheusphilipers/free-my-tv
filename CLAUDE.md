@@ -179,6 +179,9 @@ HDMI (Chromecast with Google TV, Google TV Streamer, onn 4K, NVIDIA Shield). Set
   *Ajustes* → *Modo leve* on the TV) `Lite.tmdbKey()` is empty, so every TMDB screen behaves as with no key; Assistir
   shows only the IPTV tabs, a show opens its episodes from the list (`MoviesActivity.openShow`), `Iptv` builds no title
   index and there's no mosaic. Use `Lite.tmdbKey()`, never `Config.TMDB_KEY`, to decide whether TMDB is on.
+  The home screen's tab pill (`HomeView.drawNav`, zone `Z_NAV`) opens Assistir with the same pill in the same place;
+  Assistir has its own task (`io.freemytv.assistir`) and Home/Back only move it behind the home screen
+  (`moveTaskToBack`), so the next tab comes back at once (`onNewIntent`) instead of being built again.
   On `Ui.LEGACY` the Sports page keeps each resting card and row title as a bitmap (`sportsCard`, `sportsTitle`): drawing
   the whole page on every frame of a focus move took ~60 ms on a UniTV V10 (1 GB, Android 10).
 - `HomeMode` runs every switch as a background job (`ModeJob`) in the main process; the UI is in the `:home`
