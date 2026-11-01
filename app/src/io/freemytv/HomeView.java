@@ -626,7 +626,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         float kk = width / 1920f;
         measure(sky, width, height);
         measure(heroLayer, width, Math.round(830 * kk));
-        measure(status, Lite.on() ? width : Math.round(1160 * kk), Math.round(240 * kk));   // light mode: the pill is centered
+        measure(status, width, Math.round(240 * kk));   // the whole width: the tab pill is centered
         // Sized to what they draw (the glass and its shadow; the grown tiles and their shadows): smaller layers are
         // cheaper for the GPU to composite on every frame of the drawer animation.
         measure(platter, width, Math.round(320 * kk));
@@ -3621,8 +3621,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private String[] navText = new String[0];
     private String navLanguage = "";
 
+    /** The tab pill at the top center, in both versions (the Full one keeps its picks' tabs under the title). */
     private boolean navOn() {
-        return Lite.on() && !cinema();
+        return true;
     }
 
     /** The light mode's tab pill: glass capsule, Home in bold (this screen), the focused tab on a white pill. */
@@ -3719,12 +3720,21 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     }
 
     private boolean moveLight(int dx, int dy) {
+        if (zone == Z_NAV) return moveNav(dx, dy);
+        if (zone == Z_TOP && dx < 0 && topIndex == 3 && navOn()) {
+            zone = Z_NAV;   // back along the row into the pill
+            navIndex = NAV_COUNT - 1;
+            handler.postDelayed(openNav, 250);
+            retarget(false);
+            click.move();
+            return true;
+        }
         if (cinema()) return moveCinema(dx, dy);
         switch (zone) {
             case Z_SHELF:
                 // Up from an empty shelf too: move()'s older zones (the hero, the corner capsule) aren't drawn any more.
                 if (dy >= 0) return false;
-                if (navOn()) {
+                if (cards.isEmpty() && navOn()) {
                     zone = Z_NAV;
                     navIndex = 0;   // as on Apple TV: moving up to the tabs focuses the selected one (Home)
                 } else if (cards.isEmpty()) {
@@ -3749,34 +3759,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                     if (!shelf.isEmpty()) shelfIndex = nearest(tileRects, tileRects.length, cardRects[cardIndex].centerX());
                 }
                 break;
-            case Z_NAV:
-                handler.removeCallbacks(openNav);
-                if (dx != 0) {
-                    int next = navIndex + dx;
-                    if (next < 0) return true;
-                    if (next >= NAV_COUNT) {
-                        if (lightButtons.isEmpty()) return true;
-                        zone = Z_TOP;   // on along the row to the corner buttons
-                        topIndex = 3;
-                    } else {
-                        navIndex = next;
-                        // Like the Apple TV tabs, focusing one opens it; a short wait lets you pass over the tabs.
-                        if (navIndex > 0) handler.postDelayed(openNav, 250);
-                    }
-                } else if (dy > 0) {
-                    zone = Z_SHELF;
-                    if (!shelf.isEmpty()) shelfIndex = nearest(tileRects, tileRects.length, navRects[navIndex].centerX());
-                } else {
-                    return true;
-                }
-                break;
             case Z_TOP:
-                if (dx < 0 && topIndex == 3 && navOn()) {
-                    zone = Z_NAV;   // back along the row into the pill
-                    navIndex = NAV_COUNT - 1;
-                    handler.postDelayed(openNav, 250);
-                    break;
-                }
                 if (dx != 0) {
                     int next = Math.max(picksOn() ? 0 : 3, Math.min(2 + lightButtons.size(), topIndex + dx));
                     if (next == topIndex) return true;
@@ -3789,6 +3772,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                         zone = Z_CARDS;
                         cardIndex = nearest(cardRects, cards.size(), topRects[topIndex].centerX());
                     }
+                } else if (topIndex < 3 && navOn()) {
+                    zone = Z_NAV;   // up from the picks' tabs: the pill, on Home
+                    navIndex = 0;
                 } else if (topIndex < 3 && !lightButtons.isEmpty()) {
                     topIndex = 3;   // up from the tabs reaches the corner buttons without walking the row
                 } else {
@@ -3797,6 +3783,40 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 break;
             default:
                 return false;
+        }
+        retarget(false);
+        click.move();
+        return true;
+    }
+
+    /** Along the pill; past its end, on to the corner buttons; down, back to what's under it. */
+    private boolean moveNav(int dx, int dy) {
+        handler.removeCallbacks(openNav);
+        if (dx != 0) {
+            int next = navIndex + dx;
+            if (next < 0) return true;
+            if (next >= NAV_COUNT) {
+                if (lightButtons.isEmpty()) return true;
+                zone = Z_TOP;   // on along the row to the corner buttons
+                topIndex = 3;
+            } else {
+                navIndex = next;
+                // Like the Apple TV tabs, focusing one opens it; a short wait lets you pass over the tabs.
+                if (navIndex > 0) handler.postDelayed(openNav, 250);
+            }
+        } else if (dy > 0) {
+            if (cinema()) {
+                zone = Z_CARDS;
+                cardIndex = Math.max(0, Math.min(Math.min(CINE_MAX, topTen.size()) - 1, cineTitle));
+            } else if (picksOn()) {
+                zone = Z_TOP;   // the picks' tabs under the title
+                topIndex = tab;
+            } else {
+                zone = Z_SHELF;
+                if (!shelf.isEmpty()) shelfIndex = nearest(tileRects, tileRects.length, navRects[navIndex].centerX());
+            }
+        } else {
+            return true;
         }
         retarget(false);
         click.move();
@@ -3989,6 +4009,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             cClockMinute = minute;
             HomeData.Weather wx = data.weather;
             cClockText = clockText + "   " + dateText + (Double.isNaN(wx.temp) ? "" : "   " + HomeData.degrees(wx.temp));
+            // A long date would run into the tab pill: then only the time and the temperature.
+            if (navOn() && x + cClock.measureText(cClockText) > navCapsule.left - 24 * k)
+                cClockText = clockText + (Double.isNaN(wx.temp) ? "" : "   " + HomeData.degrees(wx.temp));
         }
         c.drawText(cClockText, x, (L_BUTTON_CY + 9) * k, cClock);
         c.drawText(cLabelText, x, 196 * k, cLabel);
@@ -4082,9 +4105,14 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                     cardIndex = next;
                     setCinemaTitle(cardIndex);
                 } else if (dy < 0) {
-                    if (lightButtons.isEmpty()) return true;
-                    zone = Z_TOP;
-                    topIndex = 3;
+                    if (navOn()) {
+                        zone = Z_NAV;
+                        navIndex = 0;
+                    } else {
+                        if (lightButtons.isEmpty()) return true;
+                        zone = Z_TOP;
+                        topIndex = 3;
+                    }
                 } else {
                     zone = Z_SHELF;
                     if (!shelf.isEmpty()) shelfIndex = nearest(tileRects, tileRects.length, posterRects[cardIndex].centerX() - cineScroll.value);

@@ -59,95 +59,61 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
         LinearLayout page = ui.column();
         page.setPadding(ui.px(80), ui.px(40), ui.px(80), 0);
         root.addView(page, new FrameLayout.LayoutParams(MATCH, MATCH));
-        LinearLayout head = ui.row();
-        head.addView(ui.text("Assistir", 44, Ui.semibold, ui.ink));
-        LinearLayout tabBar = ui.row();
-        tabBar.setPadding(ui.px(28), 0, 0, 0);
+        // The home screen's pill, in the same place (Home goes back there): centered at the height of the home
+        // screen's corner buttons (103 of 1080).
         List<Object[]> names = new ArrayList<>();
         boolean lists = Iptv.get(this).connected();
-        if (Lite.on()) {
-            // Light mode: the home screen's pill, in the same place (Home goes back there); only your lists.
-            names.add(new Object[] {Ui.tr("tab|Home"), T_HOME});
-            names.add(new Object[] {Ui.tr("Live"), T_LIVE});
-            names.add(new Object[] {Ui.tr("Movies"), T_IPTV_MOVIES});
-            names.add(new Object[] {Ui.tr("Shows"), T_IPTV_SHOWS});
-            names.add(new Object[] {Ui.tr("Settings"), T_PREFS});
-        } else {
+        names.add(new Object[] {Ui.tr("tab|Home"), T_HOME});
+        if (!Lite.on()) {
             names.add(new Object[] {"Buscar", T_SEARCH});
             names.add(new Object[] {"Para você", T_EXPLORE});
-            if (lists) {
-                names.add(new Object[] {"Ao vivo", T_LIVE});
-                names.add(new Object[] {"Filmes", T_IPTV_MOVIES});
-                names.add(new Object[] {"Séries", T_IPTV_SHOWS});
-            }
-            names.add(new Object[] {"Descobrir", T_DISCOVER});
-            if (!lists) names.add(new Object[] {"Rankings", T_RANKINGS});
-            names.add(new Object[] {"Ajustes", T_PREFS});
         }
-        LinearLayout pill = Lite.on() ? ui.pill() : null;
+        names.add(new Object[] {Ui.tr("Live"), T_LIVE});
+        names.add(new Object[] {Ui.tr("Movies"), T_IPTV_MOVIES});
+        names.add(new Object[] {Ui.tr("Shows"), T_IPTV_SHOWS});
+        if (!Lite.on()) names.add(new Object[] {lists ? "Descobrir" : "Rankings", lists ? T_DISCOVER : T_RANKINGS});
+        names.add(new Object[] {Ui.tr("Settings"), T_PREFS});
+        LinearLayout pill = ui.pill();
         for (Object[] n : names) {
             final int id = (Integer) n[1];
-            if (pill != null) {
-                // The global focus listener below switches tabs (and redirects focus coming into the pill).
-                TvUi.Chip t = ui.tab((String) n[0], false);
-                tabs.add(t);
-                tabIds.add(id);
-                pill.addView(t, ui.margins(WRAP, WRAP, 0, 0, id == T_PREFS ? 0 : 4, 0));
-                continue;
-            }
-            TvUi.Chip c = ui.new Chip((String) n[0], 22, false);
-            // Only the arrows change the tab: when the focused view disappears (a button that removes itself),
-            // Android hands the focus to the first tab, and that mustn't open Buscar.
-            c.setOnFocusChangeListener((v, f) -> {
-                c.paint();
-                if (f && (tab == -1 || android.os.SystemClock.uptimeMillis() - keyAt < 600)) show(id);
-            });
-            tabs.add(c);
+            // The global focus listener below switches tabs (and redirects focus coming into the pill).
+            TvUi.Chip t = ui.tab((String) n[0], false);
+            tabs.add(t);
             tabIds.add(id);
-            tabBar.addView(c, ui.margins(WRAP, WRAP, 0, 0, 10, 0));
+            pill.addView(t, ui.margins(WRAP, WRAP, 0, 0, id == T_PREFS ? 0 : 4, 0));
         }
-        if (pill != null) {
-            // Centered at the height of the home screen's corner buttons (103 of 1080), with nothing beside it.
-            head.removeAllViews();
-            head.setGravity(Gravity.CENTER_HORIZONTAL);
-            head.addView(pill);
-            page.setPadding(ui.px(80), 0, ui.px(80), 0);
-            page.addView(head, ui.margins(MATCH, WRAP, 0, 63, 0, 18));
-            getWindow().getDecorView().getViewTreeObserver().addOnGlobalFocusChangeListener(this::pillFocus);
-        } else head.addView(tabBar);
-        if (lists && !Lite.on()) {
-            // Mosaico: 2 to 4 live channels at once, from anywhere in Assistir (→ after the last tab).
-            head.addView(new View(this), new LinearLayout.LayoutParams(0, 1, 1));
-            TvUi.Chip mosaic = ui.button("▦  Mosaico", false, () -> startActivity(new android.content.Intent(this, MultiActivity.class)));
-            head.addView(mosaic);
-        }
-        if (pill == null) page.addView(head, ui.margins(MATCH, ui.px(80), 0, 0, 0, 0));
+        LinearLayout head = ui.row();
+        head.setGravity(Gravity.CENTER_HORIZONTAL);
+        head.addView(pill);
+        page.setPadding(ui.px(80), 0, ui.px(80), 0);
+        page.addView(head, ui.margins(MATCH, WRAP, 0, 63, 0, 18));
+        getWindow().getDecorView().getViewTreeObserver().addOnGlobalFocusChangeListener(this::pillFocus);
         content = new FrameLayout(this);
         page.addView(content, ui.margins(MATCH, 0, 0, 20, 0, 0));
         ((LinearLayout.LayoutParams) content.getLayoutParams()).weight = 1;
         setContentView(root);
         int first = getIntent().getIntExtra("tab", T_EXPLORE);
-        // Light mode: a TMDB tab (the default, the search, the mic) opens your lists' movies, or Ajustes to add a list.
-        if (Lite.on() && (!tabIds.contains(first) || first == T_HOME)) first = lists ? T_IPTV_MOVIES : T_PREFS;
-        if (Lite.on()) {
-            // The pill shows on the very first frame, exactly where the home screen's was; the tab fills in right after.
-            tab = first;
-            for (int i = 0; i < tabs.size(); i++) tabs.get(i).set(tabIds.get(i) == first);
-            View decor = getWindow().getDecorView();
-            decor.getViewTreeObserver().addOnDrawListener(new android.view.ViewTreeObserver.OnDrawListener() {
-                boolean done;
-                @Override public void onDraw() {
-                    if (done) return;
-                    done = true;
-                    decor.post(() -> {
-                        decor.getViewTreeObserver().removeOnDrawListener(this);
-                        long t = android.os.SystemClock.uptimeMillis();
-                        rebuild();
-                        AppLog.w("assistir: pill in " + (t - createdAt) + " ms, tab built in " + (android.os.SystemClock.uptimeMillis() - t) + " ms");
-                    });
-                }
-            });
-        } else show(first);
+        // A tab this version doesn't have (light mode: the TMDB ones, the search, the mic) opens your lists' movies,
+        // or Ajustes to add a list.
+        if (!tabIds.contains(first) || first == T_HOME) first = Lite.on() ? (lists ? T_IPTV_MOVIES : T_PREFS) : T_EXPLORE;
+        // The pill shows on the very first frame, exactly where the home screen's was; the tab fills in right after.
+        tab = first;
+        for (int i = 0; i < tabs.size(); i++) tabs.get(i).set(tabIds.get(i) == first);
+        View decor = getWindow().getDecorView();
+        decor.getViewTreeObserver().addOnDrawListener(new android.view.ViewTreeObserver.OnDrawListener() {
+            boolean done;
+            @Override public void onDraw() {
+                if (done) return;
+                done = true;
+                decor.post(() -> {
+                    decor.getViewTreeObserver().removeOnDrawListener(this);
+                    if (content.getChildCount() > 0) return;   // already built (the mic opened Buscar)
+                    long t = android.os.SystemClock.uptimeMillis();
+                    rebuild();
+                    AppLog.w("assistir: pill in " + (t - createdAt) + " ms, tab built in " + (android.os.SystemClock.uptimeMillis() - t) + " ms");
+                });
+            }
+        });
         tabs.get(Math.max(0, tabIds.indexOf(tab))).requestFocus();
         if (Lite.on()) return;
         if (getIntent().getBooleanExtra("voice", false)) root.post(this::voiceSearch);
@@ -228,7 +194,6 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
     @Override protected void onNewIntent(android.content.Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
-        if (!Lite.on()) return;
         int t = intent.getIntExtra("tab", tab);
         int at = tabIds.indexOf(t);
         if (at < 0 || t == T_HOME) return;
@@ -242,7 +207,7 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
     /** Kept in the background on a 1 GB box only while there's memory to spare. */
     @Override public void onTrimMemory(int level) {
         super.onTrimMemory(level);
-        if (Lite.on() && level >= TRIM_MEMORY_RUNNING_LOW && !hasWindowFocus()) finish();
+        if (level >= TRIM_MEMORY_RUNNING_LOW && !hasWindowFocus()) finish();
     }
 
     /**
@@ -262,7 +227,7 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
         if (live != null) { live.destroy(); live = null; }
         View v;
         typing = false;
-        if (Lite.on() && !Iptv.get(this).connected() && (tab == T_LIVE || tab == T_IPTV_MOVIES || tab == T_IPTV_SHOWS)) {
+        if (!Iptv.get(this).connected() && (tab == T_LIVE || tab == T_IPTV_MOVIES || tab == T_IPTV_SHOWS)) {
             LinearLayout empty = ui.column();
             empty.setGravity(Gravity.CENTER);
             empty.addView(ui.text("Nenhuma lista ainda", 34, Ui.semibold, ui.ink));
@@ -1198,11 +1163,7 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
             rebuild();
             return;
         }
-        if (Lite.on()) {
-            goHome();
-            return;
-        }
-        super.onBackPressed();
+        goHome();
     }
 
     /** A poster card for an IPTV item (its own picture and name). */

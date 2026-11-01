@@ -179,7 +179,8 @@ HDMI (Chromecast with Google TV, Google TV Streamer, onn 4K, NVIDIA Shield). Set
   *Ajustes* → *Modo leve* on the TV) `Lite.tmdbKey()` is empty, so every TMDB screen behaves as with no key; Assistir
   shows only the IPTV tabs, a show opens its episodes from the list (`MoviesActivity.openShow`), `Iptv` builds no title
   index and there's no mosaic. Use `Lite.tmdbKey()`, never `Config.TMDB_KEY`, to decide whether TMDB is on.
-  The home screen's tab pill (`HomeView.drawNav`, zone `Z_NAV`) opens Assistir with the same pill in the same place;
+  The home screen's tab pill (`HomeView.drawNav`, zone `Z_NAV`, in both versions; in cinema mode the clock drops the
+  date if it would reach the pill) opens Assistir with the same pill in the same place;
   Assistir has its own task (`io.freemytv.assistir`) and Home/Back only move it behind the home screen
   (`moveTaskToBack`), so the next tab comes back at once (`onNewIntent`) instead of being built again.
   On `Ui.LEGACY` the Sports page keeps each resting card and row title as a bitmap (`sportsCard`, `sportsTitle`): drawing

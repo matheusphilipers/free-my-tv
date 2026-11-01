@@ -89,15 +89,17 @@ O mesmo app tem duas versões, e ele escolhe sozinho qual usar pela memória do 
 | | **Full** | **Light** |
 |---|---|---|
 | Para quem | TVs e boxes com 2 GB ou mais (Mi Box, Chromecast, TVs Google TV) | TV boxes de 1 GB (UniTV, TX3 mini e parecidas) |
-| Tela inicial | destaques da semana, Top 10, prateleira, clima, esportes | relógio grande, clima, prateleira e esportes, com a **pílula** no topo |
+| Tela inicial | destaques da semana, Top 10, prateleira, clima, esportes | relógio grande, clima, prateleira e esportes |
+| Pílula no topo | Início · Ao vivo · Filmes · Séries · Ajustes | a mesma |
 | Assistir | Buscar, Para você, Ao vivo, Filmes, Séries, Descobrir, Ajustes | **Ao vivo, Filmes, Séries e Ajustes** (só as suas listas) |
 | Filmes e séries | página com capa, sinopse e elenco (TMDB) | o filme toca direto; a série abre temporadas e episódios da própria lista |
 | Mosaico | sim | não |
 | Precisa da chave do TMDB | para as capas e sugestões | não |
 
-**A pílula (Light):** no topo, centralizada e alinhada com os botões do canto, ficam **Início · Ao vivo · Filmes · Séries ·
-Ajustes**, como as abas da Apple TV. Suba até ela, ande para os lados e a tela troca sozinha; *Início* ou *Voltar* trazem de
-volta para a tela inicial, com a pílula no mesmo lugar.
+**A pílula (nas duas versões):** no topo, centralizada e alinhada com os botões do canto, ficam **Início · Ao vivo ·
+Filmes · Séries · Ajustes**, como as abas da Apple TV. Suba até ela, ande para os lados e a tela troca sozinha; *Início* ou
+*Voltar* trazem de volta para a tela inicial, com a pílula no mesmo lugar. Dentro do *Assistir*, a Full mostra também
+*Buscar*, *Para você* e *Descobrir* na mesma pílula.
 
 **Como ela escolhe:** em aparelhos com até 1,5 GB de memória a **Light** liga sozinha; nos outros fica a **Full**. Para
 forçar uma das duas:
@@ -108,6 +110,7 @@ forçar uma das duas:
 
 **Testado numa UniTV V10** (Allwinner H313, 1 GB, Android 10, tela a 720p): a Light usa menos memória (106 MB contra 119 MB
 na tela inicial, sem lista), e a página de Esportes passou de ~120 ms para ~19 ms por quadro ao andar entre os cards.
+A página de Esportes mais leve vale para as duas versões em qualquer aparelho com Android 8 a 11.
 
 ### Deixar uma box de 1 GB mais rápida (opcional)
 Nessas boxes vale também desativar o que vem de fábrica e não serve para nada (loja paralela, ferramentas de teste de

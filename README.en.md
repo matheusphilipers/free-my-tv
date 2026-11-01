@@ -140,6 +140,8 @@ This fork has two versions in one app, picked by the device's memory:
 
 On devices with up to 1.5 GB of memory Light turns on by itself. To force one: on the TV, *Assistir* → *Ajustes* → *Modo leve* (*Automático*, *Ligado*, *Desligado*; applies after the app starts again), or `lite=on` / `lite=off` in `config.properties`.
 
+Both versions have the tab pill on the home screen (Home, Live, Movies, Shows, Settings); in Full, Assistir's pill also has Search, For You and Discover. The lighter Sports page applies to both, on any Android 8 to 11 device.
+
 Tested on a UniTV V10 (Allwinner H313, 1 GB, Android 10, 720p UI): the sports page went from ~120 ms to ~19 ms a frame while moving between cards. On Android 8 to 11, resting sports cards are kept as bitmaps and only the one or two cards in their focus animation are drawn again.
 
 ## Going back
