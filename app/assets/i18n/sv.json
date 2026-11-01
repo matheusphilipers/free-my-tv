@@ -234,6 +234,7 @@
  "prices from {ago}": "kurser {ago}",
  "quotes|{ago}": "{ago}",
  "shelf|Off": "Av",
+ "tab|Home": "Hem",
  "talkback|Sunrise {time}": "Soluppgång {time}",
  "the TV asked for TLS (wireless debugging); use USB debugging": "tv:n bad om TLS (trådlös felsökning); använd USB-felsökning",
  "the TV rejected the app's key": "tv:n avvisade appens nyckel",

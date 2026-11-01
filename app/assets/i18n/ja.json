@@ -234,6 +234,7 @@
  "prices from {ago}": "{ago}の相場",
  "quotes|{ago}": "{ago}",
  "shelf|Off": "オフ",
+ "tab|Home": "ホーム",
  "talkback|Sunrise {time}": "日の出 {time}",
  "the TV asked for TLS (wireless debugging); use USB debugging": "テレビが TLS（ワイヤレス デバッグ）を求めました。USB デバッグを使ってください",
  "the TV rejected the app's key": "テレビがアプリの鍵を拒否しました",

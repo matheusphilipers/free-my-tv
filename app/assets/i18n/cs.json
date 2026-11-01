@@ -234,6 +234,7 @@
  "prices from {ago}": "kurzy {ago}",
  "quotes|{ago}": "{ago}",
  "shelf|Off": "Vypnuto",
+ "tab|Home": "Domů",
  "talkback|Sunrise {time}": "Východ {time}",
  "the TV asked for TLS (wireless debugging); use USB debugging": "televizor požádal o TLS (bezdrátové ladění); použijte ladění přes USB",
  "the TV rejected the app's key": "televizor odmítl klíč aplikace",

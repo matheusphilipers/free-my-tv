@@ -234,6 +234,7 @@
  "prices from {ago}": "quotazioni di {ago}",
  "quotes|{ago}": "{ago}",
  "shelf|Off": "Disattivo",
+ "tab|Home": "Home",
  "talkback|Sunrise {time}": "Alba {time}",
  "the TV asked for TLS (wireless debugging); use USB debugging": "la TV ha chiesto TLS (debug wireless); usa il debug USB",
  "the TV rejected the app's key": "la TV ha rifiutato la chiave dell'app",

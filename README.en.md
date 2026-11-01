@@ -136,7 +136,7 @@ With a free [Watchmode](https://api.watchmode.com/) key (`watchmode_key=` in `co
 This fork has two versions in one app, picked by the device's memory:
 
 - **Full**, on TVs and boxes with 2 GB or more: everything above, plus the fork's Assistir screen (Search, For You, Live, Movies, Shows, Discover), TMDB pages and the mosaic.
-- **Light**, on 1 GB TV boxes: the home screen keeps the clock, weather, shelf and sports, and Assistir shows only your IPTV lists (Live, Movies, Shows, Settings). A movie plays straight away; a show opens its seasons and episodes from the list. No TMDB calls, no title index, no mosaic.
+- **Light**, on 1 GB TV boxes: the home screen keeps the clock, weather, shelf and sports, with an Apple TV-style tab pill at the top center (Home, Live, Movies, Shows, Settings) in line with the corner buttons: moving along it switches the screen, and Home or Back returns with the pill in the same place. Assistir shows only your IPTV lists. A movie plays straight away; a show opens its seasons and episodes from the list. No TMDB calls, no title index, no mosaic.
 
 On devices with up to 1.5 GB of memory Light turns on by itself. To force one: on the TV, *Assistir* → *Ajustes* → *Modo leve* (*Automático*, *Ligado*, *Desligado*; applies after the app starts again), or `lite=on` / `lite=off` in `config.properties`.
 

@@ -234,6 +234,7 @@
  "prices from {ago}": "kurssit {ago}",
  "quotes|{ago}": "{ago}",
  "shelf|Off": "Pois",
+ "tab|Home": "Koti",
  "talkback|Sunrise {time}": "Aurinko nousee {time}",
  "the TV asked for TLS (wireless debugging); use USB debugging": "televisio pyysi TLS:ää (langaton vianetsintä); käytä USB-vianetsintää",
  "the TV rejected the app's key": "televisio hylkäsi sovelluksen avaimen",

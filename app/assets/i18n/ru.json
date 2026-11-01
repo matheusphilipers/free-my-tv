@@ -234,6 +234,7 @@
  "prices from {ago}": "котировки за {ago}",
  "quotes|{ago}": "{ago}",
  "shelf|Off": "Выкл.",
+ "tab|Home": "Главная",
  "talkback|Sunrise {time}": "Восход {time}",
  "the TV asked for TLS (wireless debugging); use USB debugging": "телевизор запросил TLS (беспроводная отладка); используйте отладку по USB",
  "the TV rejected the app's key": "телевизор отклонил ключ приложения",

@@ -234,6 +234,7 @@
  "prices from {ago}": "{ago}的行情",
  "quotes|{ago}": "{ago}",
  "shelf|Off": "关",
+ "tab|Home": "首页",
  "talkback|Sunrise {time}": "日出 {time}",
  "the TV asked for TLS (wireless debugging); use USB debugging": "电视要求 TLS（无线调试）；请使用 USB 调试",
  "the TV rejected the app's key": "电视拒绝了应用的密钥",

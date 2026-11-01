@@ -18,6 +18,8 @@ final class Lite {
     private static final long LIMIT = 1536L * 1024 * 1024;
 
     static volatile boolean ON;
+    /** Set when Assistir's pill hands the focus back to the home screen's Home tab. */
+    static volatile boolean navBack;
     private static volatile boolean ready;
 
     static void init(Context c) {

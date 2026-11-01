@@ -234,6 +234,7 @@
  "prices from {ago}": "ราคาจาก {ago}",
  "quotes|{ago}": "{ago}",
  "shelf|Off": "ปิด",
+ "tab|Home": "หน้าแรก",
  "talkback|Sunrise {time}": "พระอาทิตย์ขึ้น {time}",
  "the TV asked for TLS (wireless debugging); use USB debugging": "ทีวีขอ TLS (การแก้ไขข้อบกพร่องไร้สาย) ให้ใช้การแก้ไขข้อบกพร่องผ่าน USB",
  "the TV rejected the app's key": "ทีวีปฏิเสธคีย์ของแอป",

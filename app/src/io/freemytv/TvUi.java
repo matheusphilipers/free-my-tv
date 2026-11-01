@@ -115,6 +115,8 @@ final class TvUi {
     final class Chip extends TextView {
         boolean on;
         private final float size;
+        /** A tab of the light mode's pill: no fill at rest (the pill is the glass), bold when selected. */
+        boolean tab;
 
         Chip(String label, float size, boolean on) {
             super(c);
@@ -165,6 +167,14 @@ final class TvUi {
 
         void paint() {
             boolean f = isFocused();
+            if (tab) {
+                setBackground(f ? round(0xFFFFFFFF, getHeight() > 0 ? getHeight() / 2f : size * 1.15f * k) : null);
+                setTypeface(on ? Ui.semibold : Ui.medium);
+                setTextColor(f ? 0xFF1D1D1F : on ? ink : dim);
+                setTranslationZ(f ? 1 : 0);
+                animate().scaleX(f ? 1.05f : 1f).scaleY(f ? 1.05f : 1f).setDuration(120).start();
+                return;
+            }
             int fill = f ? 0xFFFFFFFF : on ? chipOn : chip;
             int text = f ? 0xFF111111 : on ? chipOnText : ink;
             GradientDrawable d = round(fill, size * 0.6f * k);
@@ -174,6 +184,30 @@ final class TvUi {
             setTranslationZ(f ? 1 : 0);   // above its neighbours while it's bigger (no shadow: they flicker on this GPU)
             animate().scaleX(f ? 1.06f : 1f).scaleY(f ? 1.06f : 1f).setDuration(120).start();
         }
+    }
+
+    /** A tab of the pill at the top (light mode): the same size and place as the home screen's. */
+    Chip tab(String label, boolean on) {
+        Chip t = new Chip(label, 30, on);
+        t.setPadding(px(26), 0, px(26), 0);
+        t.setHeight(px(68));
+        t.tab = true;
+        t.paint();
+        return t;
+    }
+
+    /** The glass capsule that holds the pill's tabs. */
+    LinearLayout pill() {
+        LinearLayout p = new LinearLayout(c);
+        p.setOrientation(LinearLayout.HORIZONTAL);
+        p.setGravity(Gravity.CENTER_VERTICAL);
+        p.setPadding(px(6), px(6), px(6), px(6));
+        GradientDrawable g = round(dark ? 0x2EFFFFFF : 0xA6FFFFFF, px(40));
+        g.setStroke(px(1.5f), dark ? 0x1FFFFFFF : 0xE6FFFFFF);
+        p.setBackground(g);
+        p.setClipChildren(false);
+        p.setClipToPadding(false);
+        return p;
     }
 
     Chip chip(String label, boolean on, Runnable click) {

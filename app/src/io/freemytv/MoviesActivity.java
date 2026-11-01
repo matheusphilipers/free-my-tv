@@ -36,6 +36,8 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
     private int tab = -1;
     // Tab ids. On screen: Buscar, Para você (Explore), Ao vivo, Filmes, Séries (your IPTV lists), Descobrir, Ajustes;
     // without IPTV lists: Buscar, Para você, Descobrir, Rankings, Ajustes.
+    /** Light mode's pill: Home goes back to the home screen. */
+    static final int T_HOME = -2;
     static final int T_EXPLORE = 0, T_DISCOVER = 1, T_RANKINGS = 2, T_PREFS = 3, T_IPTV_MOVIES = 4, T_IPTV_SHOWS = 5, T_SEARCH = 6, T_LIVE = 7;
     private LivePanel live;
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -60,13 +62,12 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
         List<Object[]> names = new ArrayList<>();
         boolean lists = Iptv.get(this).connected();
         if (Lite.on()) {
-            // Light mode: only your lists (no TMDB screens).
-            if (lists) {
-                names.add(new Object[] {"Ao vivo", T_LIVE});
-                names.add(new Object[] {"Filmes", T_IPTV_MOVIES});
-                names.add(new Object[] {"Séries", T_IPTV_SHOWS});
-            }
-            names.add(new Object[] {"Ajustes", T_PREFS});
+            // Light mode: the home screen's pill, in the same place (Home goes back there); only your lists.
+            names.add(new Object[] {Ui.tr("tab|Home"), T_HOME});
+            names.add(new Object[] {Ui.tr("Live"), T_LIVE});
+            names.add(new Object[] {Ui.tr("Movies"), T_IPTV_MOVIES});
+            names.add(new Object[] {Ui.tr("Shows"), T_IPTV_SHOWS});
+            names.add(new Object[] {Ui.tr("Settings"), T_PREFS});
         } else {
             names.add(new Object[] {"Buscar", T_SEARCH});
             names.add(new Object[] {"Para você", T_EXPLORE});
@@ -79,8 +80,17 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
             if (!lists) names.add(new Object[] {"Rankings", T_RANKINGS});
             names.add(new Object[] {"Ajustes", T_PREFS});
         }
+        LinearLayout pill = Lite.on() ? ui.pill() : null;
         for (Object[] n : names) {
             final int id = (Integer) n[1];
+            if (pill != null) {
+                // The global focus listener below switches tabs (and redirects focus coming into the pill).
+                TvUi.Chip t = ui.tab((String) n[0], false);
+                tabs.add(t);
+                tabIds.add(id);
+                pill.addView(t, ui.margins(WRAP, WRAP, 0, 0, id == T_PREFS ? 0 : 4, 0));
+                continue;
+            }
             TvUi.Chip c = ui.new Chip((String) n[0], 22, false);
             // Only the arrows change the tab: when the focused view disappears (a button that removes itself),
             // Android hands the focus to the first tab, and that mustn't open Buscar.
@@ -92,21 +102,29 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
             tabIds.add(id);
             tabBar.addView(c, ui.margins(WRAP, WRAP, 0, 0, 10, 0));
         }
-        head.addView(tabBar);
+        if (pill != null) {
+            // Centered at the height of the home screen's corner buttons (103 of 1080), with nothing beside it.
+            head.removeAllViews();
+            head.setGravity(Gravity.CENTER_HORIZONTAL);
+            head.addView(pill);
+            page.setPadding(ui.px(80), 0, ui.px(80), 0);
+            page.addView(head, ui.margins(MATCH, WRAP, 0, 63, 0, 18));
+            getWindow().getDecorView().getViewTreeObserver().addOnGlobalFocusChangeListener(this::pillFocus);
+        } else head.addView(tabBar);
         if (lists && !Lite.on()) {
             // Mosaico: 2 to 4 live channels at once, from anywhere in Assistir (→ after the last tab).
             head.addView(new View(this), new LinearLayout.LayoutParams(0, 1, 1));
             TvUi.Chip mosaic = ui.button("▦  Mosaico", false, () -> startActivity(new android.content.Intent(this, MultiActivity.class)));
             head.addView(mosaic);
         }
-        page.addView(head, ui.margins(MATCH, ui.px(80), 0, 0, 0, 0));
+        if (pill == null) page.addView(head, ui.margins(MATCH, ui.px(80), 0, 0, 0, 0));
         content = new FrameLayout(this);
         page.addView(content, ui.margins(MATCH, 0, 0, 20, 0, 0));
         ((LinearLayout.LayoutParams) content.getLayoutParams()).weight = 1;
         setContentView(root);
         int first = getIntent().getIntExtra("tab", T_EXPLORE);
         // Light mode: a TMDB tab (the default, the search, the mic) opens your lists' movies, or Ajustes to add a list.
-        if (Lite.on() && !tabIds.contains(first)) first = lists ? T_IPTV_MOVIES : T_PREFS;
+        if (Lite.on() && (!tabIds.contains(first) || first == T_HOME)) first = lists ? T_IPTV_MOVIES : T_PREFS;
         show(first);
         tabs.get(Math.max(0, tabIds.indexOf(tab))).requestFocus();
         if (Lite.on()) return;
@@ -161,12 +179,42 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
         rebuild();
     }
 
+    /** The pill (light mode): arrows inside it change the tab; focus coming in from below lands on the selected one. */
+    private void pillFocus(View old, View now) {
+        int at = tabs.indexOf(now);
+        if (at < 0) return;
+        boolean inside = old != null && tabs.contains(old);
+        int id = tabIds.get(at);
+        if (!inside) {
+            int sel = tabIds.indexOf(tab);
+            if (sel >= 0 && sel != at) now.post(() -> tabs.get(sel).requestFocus());
+            return;
+        }
+        if (id == T_HOME) goHome();
+        else show(id);
+    }
+
+    /** Back to the home screen, its pill focused on Home, without an animation (the pill stays put). */
+    private void goHome() {
+        Lite.navBack = true;
+        finish();
+        overridePendingTransition(0, 0);
+    }
+
     private void rebuild() {
         showOpen = false;
         content.removeAllViews();
         if (live != null) { live.destroy(); live = null; }
         View v;
         typing = false;
+        if (Lite.on() && !Iptv.get(this).connected() && (tab == T_LIVE || tab == T_IPTV_MOVIES || tab == T_IPTV_SHOWS)) {
+            LinearLayout empty = ui.column();
+            empty.setGravity(Gravity.CENTER);
+            empty.addView(ui.text("Nenhuma lista ainda", 34, Ui.semibold, ui.ink));
+            empty.addView(ui.text("Adicione a sua em Ajustes, no fim desta barra.", 22, Ui.medium, ui.dim), ui.margins(WRAP, WRAP, 0, 14, 0, 0));
+            content.addView(empty, new FrameLayout.LayoutParams(MATCH, MATCH));
+            return;
+        }
         switch (tab) {
             case T_LIVE:
                 live = new LivePanel(this, ui, getIntent().getStringExtra("group"));
@@ -1093,6 +1141,10 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
         if (showOpen) {
             showOpen = false;
             rebuild();
+            return;
+        }
+        if (Lite.on()) {
+            goHome();
             return;
         }
         super.onBackPressed();

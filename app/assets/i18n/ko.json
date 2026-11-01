@@ -234,6 +234,7 @@
  "prices from {ago}": "{ago} 시세",
  "quotes|{ago}": "{ago}",
  "shelf|Off": "끔",
+ "tab|Home": "홈",
  "talkback|Sunrise {time}": "일출 {time}",
  "the TV asked for TLS (wireless debugging); use USB debugging": "TV가 TLS(무선 디버깅)를 요청했습니다. USB 디버깅을 사용하세요",
  "the TV rejected the app's key": "TV가 앱의 키를 거부했습니다",

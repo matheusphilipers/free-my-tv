@@ -102,7 +102,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private static String[] tabs;
     private static int tabsGeneration = -1;
     private static final String[] TAB_KIND = {null, "movie", "tv"};
-    private static final int Z_TOP = 4, Z_CARDS = 5, Z_SPORTS = 6;
+    private static final int Z_TOP = 4, Z_CARDS = 5, Z_SPORTS = 6, Z_NAV = 7;
 
     private final Activity activity;
     private final Scene scene = new Scene();
@@ -169,6 +169,15 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private List<Recs.Pick> cards = new ArrayList<>();
     // The three tabs, then the round buttons at the top right (up to HomeApps.MAX_TOP).
     private final Spring[] topFocus = new Spring[3 + HomeApps.MAX_TOP];
+    // Light mode: the tab pill at the top center (Home, Live, Movies, Shows, Settings), in line with the corner buttons.
+    // Home is this screen; focusing another tab opens Assistir on it, which draws the same pill in the same place.
+    private static final int NAV_COUNT = 5;
+    private static final int[] NAV_TAB = {-1, MoviesActivity.T_LIVE, MoviesActivity.T_IPTV_MOVIES, MoviesActivity.T_IPTV_SHOWS, MoviesActivity.T_PREFS};
+    private final Spring[] navFocus = new Spring[NAV_COUNT];
+    private final RectF[] navRects = new RectF[NAV_COUNT];
+    private final RectF navCapsule = new RectF();
+    private int navIndex;
+    private final Runnable openNav = this::openNav;
     private final RectF[] topRects = new RectF[3 + HomeApps.MAX_TOP];
     private final Spring[] cardFocus = new Spring[3];
     private final RectF[] cardRects = new RectF[3];
@@ -454,6 +463,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             topFocus[i] = new Spring(0.26f, 0.85f, 0);
             topRects[i] = new RectF();
         }
+        for (int i = 0; i < NAV_COUNT; i++) {
+            navFocus[i] = new Spring(0.26f, 0.85f, 0);
+            navRects[i] = new RectF();
+        }
         for (int i = 0; i < 3; i++) {
             cardFocus[i] = new Spring(0.32f, 0.78f, 0);
             cardRects[i] = new RectF();
@@ -502,6 +515,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         handler.postDelayed(tick, 15_000);
         checkNotices();
         if (!again) reload();
+        backToNav();
         updatePalette();
         updatePicks();
         if (sheetOpen) closeSheet();
@@ -518,6 +532,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         running = false;
         cancelReorder(true);
         handler.removeCallbacks(holdStart);
+        handler.removeCallbacks(openNav);
         okHeld = holdArmed = false;
         Choreographer.getInstance().removeFrameCallback(this);
         handler.removeCallbacks(tick);
@@ -611,7 +626,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         float kk = width / 1920f;
         measure(sky, width, height);
         measure(heroLayer, width, Math.round(830 * kk));
-        measure(status, Math.round(1160 * kk), Math.round(240 * kk));
+        measure(status, Lite.on() ? width : Math.round(1160 * kk), Math.round(240 * kk));   // light mode: the pill is centered
         // Sized to what they draw (the glass and its shadow; the grown tiles and their shadows): smaller layers are
         // cheaper for the GPU to composite on every frame of the drawer animation.
         measure(platter, width, Math.round(320 * kk));
@@ -756,7 +771,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
         boolean tilesMoving = step(tileFocus, dt);
         if (reorderAnim) tilesMoving |= stepReorder(dt, up);
-        boolean statusMoving = step(statusFocus, dt);
+        boolean statusMoving = step(statusFocus, dt) | step(navFocus, dt);
         boolean heroMoving = heroFocus.step(dt);
         boolean topMoving = step(topFocus, dt), cardsMoving = step(cardFocus, dt) | step(posterFocus, dt) | cineScroll.step(dt);
         if (topMoving) status.invalidate();
@@ -2307,6 +2322,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         heroFocus.target = !sheetOpen && zone == Z_HERO ? 1 : 0;
         if (snap) heroFocus.snap(heroFocus.target);
         boolean topChanged = aim(topFocus, !sheetOpen && zone == Z_TOP ? topIndex : -1, snap);
+        statusChanged |= aim(navFocus, !sheetOpen && zone == Z_NAV ? navIndex : -1, snap);
         heroChanged |= aim(cardFocus, !sheetOpen && zone == Z_CARDS && !cinema() ? cardIndex : -1, snap) | topChanged;
         if (cinema()) {
             heroChanged |= aim(posterFocus, !sheetOpen && zone == Z_CARDS ? cardIndex : -1, snap);
@@ -2804,6 +2820,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         HomeApps.Item it;
         RectF r;
         if (!sheetOpen && zone == WIDGETS) return;   // a widget is only read
+        if (!sheetOpen && zone == Z_NAV) {
+            handler.removeCallbacks(openNav);
+            openNav();
+            return;
+        }
         if (!sheetOpen && zone == Z_SPORTS) {
             click.open();
             int kind = sportsKind[sportsRow];
@@ -3363,6 +3384,20 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             x = topRects[i].right + 4 * k;
         }
         float b = L_BUTTON * k, right = CONTENT_R * k, cy = L_BUTTON_CY * k;
+        if (navOn()) {
+            // The pill's tabs, centered on the screen at the corner buttons' height.
+            String[] labels = navLabels();
+            float total = 0;
+            for (String n : labels) total += Math.max(lTabOn.measureText(n), lTab.measureText(n)) + 2 * pad;
+            total += (NAV_COUNT - 1) * 4 * k;
+            float nx = (w - total) / 2;
+            for (int i = 0; i < NAV_COUNT; i++) {
+                float tw = Math.max(lTabOn.measureText(labels[i]), lTab.measureText(labels[i]));
+                navRects[i].set(nx, cy - b / 2, nx + tw + 2 * pad, cy + b / 2);
+                nx = navRects[i].right + 4 * k;
+            }
+            navCapsule.set(navRects[0].left - 6 * k, cy - b / 2 - 6 * k, navRects[NAV_COUNT - 1].right + 6 * k, cy + b / 2 + 6 * k);
+        }
         for (int i = lightButtons.size() - 1; i >= 0; i--) {
             topRects[3 + i].set(right - b, cy - b / 2, right, cy + b / 2);
             right -= b + L_BUTTON_GAP * k;
@@ -3579,8 +3614,80 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
      * The round buttons (Live TV, HDMI Inputs and Settings by default): icon-only glass circles (light by day, smoked at
      * night); the focused one turns white with a dark icon (the tvOS focus) and its name appears below it.
      */
+    private static String[] navLabels() {
+        return new String[] {Ui.tr("tab|Home"), Ui.tr("Live"), Ui.tr("Movies"), Ui.tr("Shows"), Ui.tr("Settings")};
+    }
+
+    private String[] navText = new String[0];
+    private String navLanguage = "";
+
+    private boolean navOn() {
+        return Lite.on() && !cinema();
+    }
+
+    /** The light mode's tab pill: glass capsule, Home in bold (this screen), the focused tab on a white pill. */
+    private void drawNav(Canvas c) {
+        float rr = navCapsule.height() / 2;
+        tmp.set(navCapsule);
+        tmp.offset(0, 6 * k);
+        shadow.setColor(Ui.alpha(0xFF000000, tone(0.08f, 0.25f)));
+        shadows.draw(c, tmp, rr, SHADOW_BLUR * k, shadow);
+        scene.liquid(c, navCapsule, rr, tone(0xFFFFFFFF, SMOKE), tone(0.55f, 0.5f), tone(0.02f, 0.01f), 12 * k, 8 * k,
+                tone(0.6f, 0.45f), 1);
+        if (!Ui.language.equals(navLanguage) || navText.length != NAV_COUNT) {   // no allocations while drawing
+            navText = navLabels();
+            navLanguage = Ui.language;
+        }
+        for (int i = 0; i < NAV_COUNT; i++) {
+            RectF r = navRects[i];
+            float f = Ui.clamp(navFocus[i].value);
+            if (f > 0.01f) {
+                float s = 1 + 0.05f * f;
+                cell.set(r.centerX() - r.width() * s / 2, r.centerY() - r.height() * s / 2,
+                        r.centerX() + r.width() * s / 2, r.centerY() + r.height() * s / 2);
+                float pr = cell.height() / 2;
+                tmp.set(cell);
+                tmp.offset(0, 8 * k * f);
+                shadow.setColor(Ui.alpha(0xFF000000, tone(0.22f, 0.4f) * f));
+                shadows.draw(c, tmp, pr, SHADOW_BLUR * k, shadow);
+                fill.setShader(null);
+                fill.setColor(Ui.alpha(0xFFFFFFFF, f));
+                c.drawRoundRect(cell, pr, pr, fill);
+            }
+            String label = navText[i];
+            Paint p = i == 0 ? lTabOn : lTab;
+            int base = i == 0 ? tone(L_INK, WHITE) : tone(L_DIM, 0xFF8E8E93);
+            p.setColor(blend(base, L_INK, f));   // always dark on the white pill
+            c.drawText(label, r.centerX() - p.measureText(label) / 2, r.centerY() + Ui.halfCap(p), p);
+        }
+        lTab.setColor(tone(L_DIM, 0xFF8E8E93));
+        lTabOn.setColor(tone(L_INK, WHITE));
+    }
+
+    /** Opens Assistir on the focused tab, the pill in the same place; Home there brings the focus back here. */
+    private void openNav() {
+        if (zone != Z_NAV || navIndex <= 0 || !(getContext() instanceof Activity)) return;
+        Activity a = (Activity) getContext();
+        click.open();
+        a.startActivity(new android.content.Intent(a, MoviesActivity.class)
+                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK | android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                .putExtra("tab", NAV_TAB[navIndex]).putExtra("nav", true));
+        a.overridePendingTransition(0, 0);
+    }
+
+    /** Back from Assistir's pill: the focus on Home in this pill, as if it never left. */
+    private void backToNav() {
+        if (!Lite.navBack) return;
+        Lite.navBack = false;
+        if (!navOn()) return;
+        zone = Z_NAV;
+        navIndex = 0;
+        retarget(true);
+    }
+
     private void drawLightButtons(Canvas c) {
         applyTone();
+        if (navOn()) drawNav(c);
         for (int i = 0; i < lightButtons.size(); i++) {
             HomeApps.Item it = lightButtons.get(i);
             RectF r = topRects[3 + i];
@@ -3615,7 +3722,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             case Z_SHELF:
                 // Up from an empty shelf too: move()'s older zones (the hero, the corner capsule) aren't drawn any more.
                 if (dy >= 0) return false;
-                if (cards.isEmpty()) {
+                if (navOn()) {
+                    zone = Z_NAV;
+                    navIndex = 0;   // as on Apple TV: moving up to the tabs focuses the selected one (Home)
+                } else if (cards.isEmpty()) {
                     if (!picksOn() && lightButtons.isEmpty()) return true;   // no tabs and no buttons above
                     zone = Z_TOP;
                     topIndex = picksOn() ? tab : 3;
@@ -3637,7 +3747,34 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                     if (!shelf.isEmpty()) shelfIndex = nearest(tileRects, tileRects.length, cardRects[cardIndex].centerX());
                 }
                 break;
+            case Z_NAV:
+                handler.removeCallbacks(openNav);
+                if (dx != 0) {
+                    int next = navIndex + dx;
+                    if (next < 0) return true;
+                    if (next >= NAV_COUNT) {
+                        if (lightButtons.isEmpty()) return true;
+                        zone = Z_TOP;   // on along the row to the corner buttons
+                        topIndex = 3;
+                    } else {
+                        navIndex = next;
+                        // Like the Apple TV tabs, focusing one opens it; a short wait lets you pass over the tabs.
+                        if (navIndex > 0) handler.postDelayed(openNav, 450);
+                    }
+                } else if (dy > 0) {
+                    zone = Z_SHELF;
+                    if (!shelf.isEmpty()) shelfIndex = nearest(tileRects, tileRects.length, navRects[navIndex].centerX());
+                } else {
+                    return true;
+                }
+                break;
             case Z_TOP:
+                if (dx < 0 && topIndex == 3 && navOn()) {
+                    zone = Z_NAV;   // back along the row into the pill
+                    navIndex = NAV_COUNT - 1;
+                    handler.postDelayed(openNav, 450);
+                    break;
+                }
                 if (dx != 0) {
                     int next = Math.max(picksOn() ? 0 : 3, Math.min(2 + lightButtons.size(), topIndex + dx));
                     if (next == topIndex) return true;
