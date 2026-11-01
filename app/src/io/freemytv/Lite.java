@@ -7,8 +7,9 @@ import android.content.SharedPreferences;
 /**
  * Light mode, for boxes with about 1 GB of RAM: no TMDB (no picks, no Explore, Discover, Rankings or movie pages),
  * no title index for the TMDB screens, no mosaic. What stays: the home screen, the shelf, the clock and weather, and
- * your IPTV lists (Ao vivo, Filmes, Séries) with their player. Automatic on weak boxes; "lite" in the settings
- * ("auto", "on", "off") overrides it. Read once per process: a change applies after the app starts again.
+ * your IPTV lists (Ao vivo, Filmes, Séries) with their player. Automatic on weak boxes; lite= in config.properties
+ * and the switch in Assistir > Ajustes ("auto", "on", "off") override it. Read once per process: a change applies
+ * after the app starts again.
  */
 final class Lite {
     private Lite() {}
@@ -36,9 +37,9 @@ final class Lite {
         return c.getApplicationContext().getSharedPreferences("lite", Context.MODE_PRIVATE);
     }
 
-    /** "auto", "on" or "off". */
+    /** "auto", "on" or "off": what was picked on the TV, else the build's lite= (config.properties). */
     static String choice(Context c) {
-        return sp(c).getString("mode", "auto");
+        return sp(c).getString("mode", Config.LITE);
     }
 
     static void setChoice(Context c, String mode) {

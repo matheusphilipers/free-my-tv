@@ -82,6 +82,41 @@ proteção de tela e o botão que volta tudo ao normal. Além disso:
 - Começou a ver um filme da **Minha lista**? Ele sai de lá e vai para **Continuar assistindo**.
 - Comentários em inglês são traduzidos para o português automaticamente.
 
+## Duas versões: Full e Light
+
+O mesmo app tem duas versões, e ele escolhe sozinho qual usar pela memória do aparelho:
+
+| | **Full** | **Light** |
+|---|---|---|
+| Para quem | TVs e boxes com 2 GB ou mais (Mi Box, Chromecast, TVs Google TV) | TV boxes de 1 GB (UniTV, TX3 mini e parecidas) |
+| Tela inicial | destaques da semana, Top 10, prateleira, clima, esportes | relógio grande, clima, prateleira e esportes |
+| Assistir | Buscar, Para você, Ao vivo, Filmes, Séries, Descobrir, Ajustes | **Ao vivo, Filmes, Séries e Ajustes** (só as suas listas) |
+| Filmes e séries | página com capa, sinopse e elenco (TMDB) | o filme toca direto; a série abre temporadas e episódios da própria lista |
+| Mosaico | sim | não |
+| Precisa da chave do TMDB | para as capas e sugestões | não |
+
+**Como ela escolhe:** em aparelhos com até 1,5 GB de memória a **Light** liga sozinha; nos outros fica a **Full**. Para
+forçar uma das duas:
+
+- **Na TV:** *Assistir* → *Ajustes* → **Modo leve** → *Automático*, *Ligado* ou *Desligado* (vale depois de fechar e
+  abrir o app de novo);
+- **Ao montar o app:** `lite=auto`, `lite=on` (sempre Light) ou `lite=off` (sempre Full) no `config.properties`.
+
+**Testado numa UniTV V10** (Allwinner H313, 1 GB, Android 10, tela a 720p): a Light usa menos memória (106 MB contra 119 MB
+na tela inicial, sem lista), e a página de Esportes passou de ~120 ms para ~19 ms por quadro ao andar entre os cards.
+
+### Deixar uma box de 1 GB mais rápida (opcional)
+Nessas boxes vale também desativar o que vem de fábrica e não serve para nada (loja paralela, ferramentas de teste de
+fábrica, impressão, feedback do Google) e encurtar as animações do sistema. Nada é desinstalado e tudo volta com
+`adb shell pm enable <pacote>`:
+```bash
+adb shell pm disable-user --user 0 <pacote>
+adb shell settings put global window_animation_scale 0.5
+adb shell settings put global transition_animation_scale 0.5
+adb shell settings put global animator_duration_scale 0.5
+```
+Não desative a tela inicial da própria box (na UniTV, `com.class.unitvfree`): é para ela que o botão *Original* volta.
+
 ## Controle remoto no reprodutor
 
 | | TV ao vivo | Filmes e séries |

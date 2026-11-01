@@ -43,6 +43,8 @@ CRYPTO=false; [ "$(prop show_crypto true)" = "true" ] && CRYPTO=true
 ANIMATION=false; [ "$(prop hide_animation false)" = "true" ] && ANIMATION=true
 SPORTS=false; [ "$(prop show_sports false)" = "true" ] && SPORTS=true
 F1=false; [ "$(prop sports_f1 false)" = "true" ] && F1=true
+LITE="$(prop lite auto)"
+case "$LITE" in auto|on|off) ;; *) echo "config.properties: lite must be auto, on or off (got \"$LITE\")" >&2; exit 1 ;; esac
 
 rm -rf out && mkdir -p out/gen/io/freemytv out/classes
 cat > out/gen/io/freemytv/Config.java <<EOF
@@ -75,6 +77,7 @@ final class Config {
     static final String SPORTS_NHL_SOFA = "$(prop sports_nhl_sofa '')";
     static final String SPORTS_F1_TV = "$(prop sports_f1_tv '')";
     static final boolean SPORTS_F1 = $F1;
+    static final String LITE = "$LITE";
 }
 EOF
 

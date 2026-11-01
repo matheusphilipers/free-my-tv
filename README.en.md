@@ -119,6 +119,7 @@ The first values come from `config.properties`, created by the first build (Goog
 | `disable_assistant` | Also turn off Google Assistant | `false` |
 | `hide_services` | Streaming services to leave out of the picks even when their app is on the TV (`netflix`, `prime`, `disney`…), comma separated; for apps the TV ships that you don't subscribe to. Google TV only | empty |
 | `hide_apps` | Apps to leave out of the shelf, All Apps and the picks, by id or name (part of it), comma separated; for apps the TV ships that can't be uninstalled, like Samsung's built-in Netflix. LG and Samsung only | empty |
+| `lite` | `auto`: the [Light version](#full-and-light) on devices with up to 1.5 GB of memory, Full elsewhere; `on`: always Light; `off`: always Full. Google TV and Android TV only | `auto` |
 
 Changed something? Run `./build.sh` and install again. Keep `freemytv.keystore`: updates are signed with it.
 
@@ -129,6 +130,17 @@ Free, and it takes two minutes: create an account at [themoviedb.org](https://ww
 ### Opening a title, not just its app (optional)
 
 With a free [Watchmode](https://api.watchmode.com/) key (`watchmode_key=` in `config.properties`), a pick opens its own page in the streaming app instead of the app's home. The free plan (2,500 credits a month) is enough: each title costs two requests the first time and is remembered after that. It works where the app takes the title's web address (tested: Prime Video and JioHotstar); where it doesn't, the pick just opens the app, as without a key.
+
+## Full and Light
+
+This fork has two versions in one app, picked by the device's memory:
+
+- **Full**, on TVs and boxes with 2 GB or more: everything above, plus the fork's Assistir screen (Search, For You, Live, Movies, Shows, Discover), TMDB pages and the mosaic.
+- **Light**, on 1 GB TV boxes: the home screen keeps the clock, weather, shelf and sports, and Assistir shows only your IPTV lists (Live, Movies, Shows, Settings). A movie plays straight away; a show opens its seasons and episodes from the list. No TMDB calls, no title index, no mosaic.
+
+On devices with up to 1.5 GB of memory Light turns on by itself. To force one: on the TV, *Assistir* → *Ajustes* → *Modo leve* (*Automático*, *Ligado*, *Desligado*; applies after the app starts again), or `lite=on` / `lite=off` in `config.properties`.
+
+Tested on a UniTV V10 (Allwinner H313, 1 GB, Android 10, 720p UI): the sports page went from ~120 ms to ~19 ms a frame while moving between cards. On Android 8 to 11, resting sports cards are kept as bitmaps and only the one or two cards in their focus animation are drawn again.
 
 ## Going back
 

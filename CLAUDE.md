@@ -175,6 +175,12 @@ HDMI (Chromecast with Google TV, Google TV Streamer, onn 4K, NVIDIA Shield). Set
   and `_height`, `ro.config.low_ram`). There every pixel and every MB counts: `Backdrop` builds its images at the UI's
   size (and the picks use TMDB's w1280), and the shelf logos have a copy at the resting size and one at the focused
   size, so both draw pixel for pixel.
+- Light mode (`Lite`): on devices with up to 1.5 GB of memory (or `lite=on` in `config.properties`, or *Assistir* →
+  *Ajustes* → *Modo leve* on the TV) `Lite.tmdbKey()` is empty, so every TMDB screen behaves as with no key; Assistir
+  shows only the IPTV tabs, a show opens its episodes from the list (`MoviesActivity.openShow`), `Iptv` builds no title
+  index and there's no mosaic. Use `Lite.tmdbKey()`, never `Config.TMDB_KEY`, to decide whether TMDB is on.
+  On `Ui.LEGACY` the Sports page keeps each resting card and row title as a bitmap (`sportsCard`, `sportsTitle`): drawing
+  the whole page on every frame of a focus move took ~60 ms on a UniTV V10 (1 GB, Android 10).
 - `HomeMode` runs every switch as a background job (`ModeJob`) in the main process; the UI is in the `:home`
   process. `Watchdog` goes back to the stock home screen after 3 crashes in 5 minutes.
 - On-screen text: `Ui.tr("English")`, translated from `app/assets/i18n/<lang>.json` (keyed by the English; one
