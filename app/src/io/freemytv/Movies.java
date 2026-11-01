@@ -354,7 +354,7 @@ final class Movies {
 
     /** Builds the home rows if they're from another week (or `force`). */
     void refreshHome(boolean force) {
-        if (Config.TMDB_KEY.trim().isEmpty()) return;
+        if (Lite.tmdbKey().trim().isEmpty()) return;
         if (building) { again |= force; return; }
         long now = System.currentTimeMillis();
         if (!force && home != null && prefs.getLong("homeWeek", 0) == week(now)) return;
@@ -922,7 +922,7 @@ final class Movies {
     // MARK: - Network
 
     private JSONObject get(String path) throws IOException, org.json.JSONException {
-        String key = Config.TMDB_KEY.trim();
+        String key = Lite.tmdbKey().trim();
         if (key.isEmpty()) throw new IOException("no TMDB key");
         boolean bearer = key.startsWith("eyJ");
         String url = API + path + (bearer ? "" : (path.contains("?") ? "&" : "?") + "api_key=" + URLEncoder.encode(key, "UTF-8"));

@@ -59,16 +59,26 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
         tabBar.setPadding(ui.px(28), 0, 0, 0);
         List<Object[]> names = new ArrayList<>();
         boolean lists = Iptv.get(this).connected();
-        names.add(new Object[] {"Buscar", T_SEARCH});
-        names.add(new Object[] {"Para você", T_EXPLORE});
-        if (lists) {
-            names.add(new Object[] {"Ao vivo", T_LIVE});
-            names.add(new Object[] {"Filmes", T_IPTV_MOVIES});
-            names.add(new Object[] {"Séries", T_IPTV_SHOWS});
+        if (Lite.on()) {
+            // Light mode: only your lists (no TMDB screens).
+            if (lists) {
+                names.add(new Object[] {"Ao vivo", T_LIVE});
+                names.add(new Object[] {"Filmes", T_IPTV_MOVIES});
+                names.add(new Object[] {"Séries", T_IPTV_SHOWS});
+            }
+            names.add(new Object[] {"Ajustes", T_PREFS});
+        } else {
+            names.add(new Object[] {"Buscar", T_SEARCH});
+            names.add(new Object[] {"Para você", T_EXPLORE});
+            if (lists) {
+                names.add(new Object[] {"Ao vivo", T_LIVE});
+                names.add(new Object[] {"Filmes", T_IPTV_MOVIES});
+                names.add(new Object[] {"Séries", T_IPTV_SHOWS});
+            }
+            names.add(new Object[] {"Descobrir", T_DISCOVER});
+            if (!lists) names.add(new Object[] {"Rankings", T_RANKINGS});
+            names.add(new Object[] {"Ajustes", T_PREFS});
         }
-        names.add(new Object[] {"Descobrir", T_DISCOVER});
-        if (!lists) names.add(new Object[] {"Rankings", T_RANKINGS});
-        names.add(new Object[] {"Ajustes", T_PREFS});
         for (Object[] n : names) {
             final int id = (Integer) n[1];
             TvUi.Chip c = ui.new Chip((String) n[0], 22, false);
@@ -83,7 +93,7 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
             tabBar.addView(c, ui.margins(WRAP, WRAP, 0, 0, 10, 0));
         }
         head.addView(tabBar);
-        if (lists) {
+        if (lists && !Lite.on()) {
             // Mosaico: 2 to 4 live channels at once, from anywhere in Assistir (→ after the last tab).
             head.addView(new View(this), new LinearLayout.LayoutParams(0, 1, 1));
             TvUi.Chip mosaic = ui.button("▦  Mosaico", false, () -> startActivity(new android.content.Intent(this, MultiActivity.class)));
@@ -94,8 +104,12 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
         page.addView(content, ui.margins(MATCH, 0, 0, 20, 0, 0));
         ((LinearLayout.LayoutParams) content.getLayoutParams()).weight = 1;
         setContentView(root);
-        show(getIntent().getIntExtra("tab", T_EXPLORE));
+        int first = getIntent().getIntExtra("tab", T_EXPLORE);
+        // Light mode: a TMDB tab (the default, the search, the mic) opens your lists' movies, or Ajustes to add a list.
+        if (Lite.on() && !tabIds.contains(first)) first = lists ? T_IPTV_MOVIES : T_PREFS;
+        show(first);
         tabs.get(Math.max(0, tabIds.indexOf(tab))).requestFocus();
+        if (Lite.on()) return;
         if (getIntent().getBooleanExtra("voice", false)) root.post(this::voiceSearch);
         if (Iptv.get(this).connected()) movies.run(() -> Lineup.get(this), l -> {});   // channels ready for the search
     }
@@ -129,6 +143,7 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
     }
 
     @Override public void onIptv() {
+        if (showOpen) return;   // a show's episodes are on screen: don't swap the grid back in under them
         if (tab == T_LIVE && live != null) live.onIptv();
         // The list's status changed (catalog downloaded): the Preferences panel shows it; the form isn't rebuilt mid-typing.
         if (tab == T_PREFS && Iptv.get(this).connected() && !typing) rebuild();
@@ -147,6 +162,7 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
     }
 
     private void rebuild() {
+        showOpen = false;
         content.removeAllViews();
         if (live != null) { live.destroy(); live = null; }
         View v;
@@ -181,7 +197,7 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
         col.setClipChildren(false);
         scroll.addView(col);
         if (home == null) {
-            col.addView(ui.text(Config.TMDB_KEY.isEmpty() ? "Falta a chave do TMDB no config.properties." : "Carregando sugestões…", 26, Ui.medium, ui.dim));
+            col.addView(ui.text(Lite.tmdbKey().isEmpty() ? "Falta a chave do TMDB no config.properties." : "Carregando sugestões…", 26, Ui.medium, ui.dim));
             return scroll;
         }
         if (home.hero != null) col.addView(hero(home.hero, home.heroLabel), ui.margins(MATCH, ui.px(440), 0, 0, 0, 30));
@@ -705,7 +721,43 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
 
     // MARK: - Preferences
 
+    /** Light mode on this box: automatic, on or off (applies when the app starts again). */
+    private View litePanel() {
+        LinearLayout p = ui.column();
+        p.addView(ui.text("MODO LEVE", 17, Ui.semibold, ui.dim));
+        String now = Lite.on() ? "Ligado agora" : "Desligado agora";
+        p.addView(ui.text(now + ". Para aparelhos com pouca memória: só as suas listas, sem as sugestões de filmes. "
+                + "Vale depois que o app abrir de novo.", 19, Ui.medium, ui.faint), ui.margins(WRAP, WRAP, 0, 8, 0, 14));
+        LinearLayout r = ui.row();
+        String[][] modes = {{"auto", "Automático"}, {"on", "Ligado"}, {"off", "Desligado"}};
+        List<TvUi.Chip> chips = new ArrayList<>();
+        for (String[] m : modes) {
+            TvUi.Chip c = ui.chip(m[1], Lite.choice(this).equals(m[0]), null);
+            c.setOnClickListener(v -> {
+                Lite.setChoice(this, m[0]);
+                for (int i = 0; i < chips.size(); i++) chips.get(i).set(modes[i][0].equals(m[0]));
+                android.widget.Toast.makeText(this, "Feche e abra o app de novo para valer.", android.widget.Toast.LENGTH_LONG).show();
+            });
+            chips.add(c);
+            r.addView(c, ui.margins(WRAP, WRAP, 0, 0, 12, 0));
+        }
+        p.addView(r);
+        return p;
+    }
+
     private View preferences() {
+        if (Lite.on()) {
+            // Light mode: your lists and the light mode switch, nothing about TMDB.
+            ScrollView s = new ScrollView(this);
+            s.setVerticalScrollBarEnabled(false);
+            s.setClipToPadding(false);
+            LinearLayout col = ui.column();
+            col.setPadding(0, 0, 0, ui.px(60));
+            col.addView(ui.panel(iptvPanel(), 28), ui.margins(MATCH, WRAP, 0, 0, 0, 24));
+            col.addView(ui.panel(litePanel(), 28), ui.margins(MATCH, WRAP, 0, 0, 0, 24));
+            s.addView(col);
+            return s;
+        }
         LinearLayout view = ui.row();
         view.setGravity(Gravity.TOP);
         ScrollView left = new ScrollView(this);
@@ -791,6 +843,7 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
         }
         col.addView(ui.panel(subs, 28), ui.margins(MATCH, WRAP, 0, 0, 0, 24));
         col.addView(ui.panel(iptvPanel(), 28), ui.margins(MATCH, WRAP, 0, 0, 0, 24));
+        col.addView(ui.panel(litePanel(), 28), ui.margins(MATCH, WRAP, 0, 0, 0, 24));
         view.addView(left, new LinearLayout.LayoutParams(0, MATCH, 1));
         // What the home screen shows this week
         LinearLayout prev = ui.column();
@@ -949,6 +1002,12 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
 
     /** An IPTV item: its TMDB page when we know (or find) it; a movie we can't find just plays. */
     private void openIptv(Iptv.Version v) {
+        if (Lite.on()) {
+            // No TMDB pages: a movie plays, a show opens its seasons and episodes from the list.
+            if (v.kind.equals("tv")) openShow(v);
+            else PlayerActivity.play(this, Iptv.movieUrl(v), Iptv.display(v), v.label() + " · " + v.source.name, "iptv:" + v.source.id + ":" + v.id, v.icon, "movie", 0, null);
+            return;
+        }
         if (v.tmdb > 0) { TvUi.open(this, v.kind, v.tmdb); return; }
         android.widget.Toast.makeText(this, "Procurando…", android.widget.Toast.LENGTH_SHORT).show();
         String name = v.title.isEmpty() ? Iptv.display(v) : v.title;
@@ -957,6 +1016,86 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
             else if (v.kind.equals("movie")) PlayerActivity.play(this, Iptv.movieUrl(v), Iptv.display(v), v.label() + " · " + v.source.name, "iptv:" + v.source.id + ":" + v.id, v.icon, "movie", 0, null);
             else android.widget.Toast.makeText(this, "Não achei essa série no TMDB.", android.widget.Toast.LENGTH_LONG).show();
         });
+    }
+
+    /** Light mode's show page: seasons and episodes straight from the list, text only. Back returns to the grid. */
+    private boolean showOpen;
+
+    private void openShow(Iptv.Version show) {
+        showOpen = true;
+        content.removeAllViews();
+        LinearLayout col = ui.column();
+        col.addView(ui.line(Iptv.display(show), 34, Ui.semibold, ui.ink, 1));
+        TextView wait = ui.text("Carregando episódios…", 22, Ui.medium, ui.dim);
+        col.addView(wait, ui.margins(WRAP, WRAP, 0, 16, 0, 0));
+        content.addView(col, new FrameLayout.LayoutParams(MATCH, MATCH));
+        movies.run(() -> Iptv.get(this).episodes(show), list -> {
+            if (isFinishing() || !showOpen) return;
+            if (list == null || list.isEmpty()) { wait.setText("Não deu para carregar os episódios dessa série."); return; }
+            col.removeView(wait);
+            java.util.TreeMap<Integer, List<Iptv.Episode>> seasons = new java.util.TreeMap<>();
+            for (Iptv.Episode e : list) {
+                List<Iptv.Episode> l = seasons.get(e.season);
+                if (l == null) seasons.put(e.season, l = new ArrayList<>());
+                l.add(e);
+            }
+            android.widget.HorizontalScrollView hs = new android.widget.HorizontalScrollView(this);
+            hs.setHorizontalScrollBarEnabled(false);
+            LinearLayout tabsRow = ui.row();
+            hs.addView(tabsRow);
+            col.addView(hs, ui.margins(MATCH, WRAP, 0, 22, 0, 16));
+            ScrollView scroll = new ScrollView(this);
+            scroll.setVerticalScrollBarEnabled(false);
+            scroll.setClipToPadding(false);
+            scroll.setPadding(0, ui.px(6), 0, ui.px(60));
+            LinearLayout eps = ui.column();
+            scroll.addView(eps);
+            col.addView(scroll, new LinearLayout.LayoutParams(MATCH, 0, 1));
+            List<TvUi.Chip> chips = new ArrayList<>();
+            for (int season : seasons.keySet()) {
+                TvUi.Chip c = ui.chip("Temporada " + season, chips.isEmpty(), null);
+                c.setOnClickListener(v -> {
+                    for (TvUi.Chip x : chips) x.set(x == c);
+                    fillShow(eps, show, seasons.get(season));
+                });
+                chips.add(c);
+                tabsRow.addView(c, ui.margins(WRAP, WRAP, 0, 0, 10, 0));
+            }
+            fillShow(eps, show, seasons.firstEntry().getValue());
+            chips.get(0).requestFocus();
+        });
+    }
+
+    private void fillShow(LinearLayout eps, Iptv.Version show, List<Iptv.Episode> list) {
+        eps.removeAllViews();
+        String name = Iptv.display(show);
+        for (int i = 0; i < list.size(); i++) {
+            Iptv.Episode e = list.get(i);
+            String key = "iptv:" + show.source.id + ":s" + show.id + ":" + e.id;
+            org.json.JSONArray next = new org.json.JSONArray();
+            for (int j = i + 1; j < list.size(); j++) {
+                Iptv.Episode n = list.get(j);
+                try {
+                    next.put(new org.json.JSONObject().put("url", Iptv.episodeUrl(n)).put("title", name)
+                            .put("subtitle", "T" + n.season + ":E" + n.number + " · " + n.title)
+                            .put("key", "iptv:" + show.source.id + ":s" + show.id + ":" + n.id));
+                } catch (Exception ignored) {}
+            }
+            boolean seen = PlayerActivity.Resume.position(this, key) > 0;
+            String label = "E" + e.number + (e.title.isEmpty() ? "" : "  ·  " + e.title) + (seen ? "  ·  continuar" : "");
+            TvUi.Chip c = ui.button(label, false, () -> PlayerActivity.play(this, Iptv.episodeUrl(e), name,
+                    "T" + e.season + ":E" + e.number + " · " + e.title, key, show.icon, "tv", 0, next));
+            eps.addView(c, ui.margins(WRAP, WRAP, 0, 0, 0, 12));
+        }
+    }
+
+    @Override public void onBackPressed() {
+        if (showOpen) {
+            showOpen = false;
+            rebuild();
+            return;
+        }
+        super.onBackPressed();
     }
 
     /** A poster card for an IPTV item (its own picture and name). */

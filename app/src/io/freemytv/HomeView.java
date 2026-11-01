@@ -1710,7 +1710,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (sportsDraw == null) return;
         Sports.All all = Sports.on() ? data.sports : null;
         int rows = 0;
-        Movies.Home mh = Config.TMDB_KEY.trim().isEmpty() ? null : Movies.get(getContext()).home;
+        Movies.Home mh = Lite.tmdbKey().trim().isEmpty() ? null : Movies.get(getContext()).home;
         movieHome = mh;
         updateCinema(mh);
         // Your movie rows first (the Top 10 is at the top of the home screen when the cinema is on), then the sports.
@@ -1724,7 +1724,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             cont.items.addAll(going);
             pageRows.add(cont);
         }
-        List<Movies.Title> mine = Config.TMDB_KEY.trim().isEmpty() ? new ArrayList<>() : Movies.get(getContext()).myList();
+        List<Movies.Title> mine = Lite.tmdbKey().trim().isEmpty() ? new ArrayList<>() : Movies.get(getContext()).myList();
         if (!mine.isEmpty()) {
             Movies.Row my = new Movies.Row();
             my.title = Ui.tr("My list");

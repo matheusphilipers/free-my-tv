@@ -744,6 +744,7 @@ final class Iptv {
                 v.audio = one(pool, v.audio);
                 v.year = one(pool, v.year);
                 score(v, dub);
+                if (Lite.on()) continue;   // light mode: no TMDB screens to match titles for, so no title index
                 if (v.tmdb > 0) add(idx, v.kind + "#" + v.tmdb, v);
                 if (!v.title.isEmpty()) {
                     if (!v.year.isEmpty()) add(idx, v.kind + ":" + v.title + " " + v.year, v);
