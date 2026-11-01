@@ -24,14 +24,33 @@ final class SportsDraw {
     private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG), stroke = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint shadow = new Paint(Paint.ANTI_ALIAS_FLAG), bitmapPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
     final TextPaint text = new TextPaint(Paint.ANTI_ALIAS_FLAG), fit = new TextPaint(Paint.ANTI_ALIAS_FLAG);
-    private final RectF tmp = new RectF();
+    private final RectF tmp = new RectF(), shade = new RectF();
     private final Rect src = new Rect();
+    // Android 8-11: setShadowLayer blurs on the CPU on every frame of a focus animation (the UniTV V10 spent most of
+    // each frame there); Shadows blurs each size once and reuses it.
+    private final Shadows shadows = new Shadows();
+    private final Paint shadowTint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
     SportsDraw(Context context, float k) {
         this.context = context;
         this.k = k;
         stroke.setStyle(Paint.Style.STROKE);
         shadow.setColor(0);
+    }
+
+    /** A soft drop shadow under `r` (corner `radius`), the color `color`, blurred by `blur`, moved down by `dy`. */
+    private void dropShadow(Canvas c, RectF r, float radius, float blur, float dy, int color) {
+        if (Ui.LEGACY) {
+            shade.set(r);
+            shade.offset(0, dy);
+            shadowTint.setColor(color);
+            shadows.draw(c, shade, radius, blur, shadowTint);
+            return;
+        }
+        shadow.setColor(0);
+        shadow.setShadowLayer(blur, 0, dy, color);
+        c.drawRoundRect(r, radius, radius, shadow);
+        shadow.clearShadowLayer();
     }
 
     // MARK: - Colors
@@ -55,11 +74,7 @@ final class SportsDraw {
         float s = 1 + 0.04f * f;
         tmp.set(r.centerX() - r.width() * s / 2, r.centerY() - r.height() * s / 2, r.centerX() + r.width() * s / 2, r.centerY() + r.height() * s / 2);
         float radius = 28 * k * s;
-        if (f > 0.01f || solid != 0) {
-            shadow.setColor(0);
-            shadow.setShadowLayer(30 * k, 0, 14 * k, Ui.alpha(0xFF000000, 0.12f + 0.16f * f));
-            c.drawRoundRect(tmp, radius, radius, shadow);
-        }
+        if (f > 0.01f || solid != 0) dropShadow(c, tmp, radius, 30 * k, 14 * k, Ui.alpha(0xFF000000, 0.12f + 0.16f * f));
         if (solid != 0) {
             fill.setColor(solid);
             c.drawRoundRect(tmp, radius, radius, fill);
@@ -234,10 +249,7 @@ final class SportsDraw {
         float s = 1 + 0.08f * f;
         tmp.set(r.centerX() - r.width() * s / 2, r.centerY() - r.height() * s / 2, r.centerX() + r.width() * s / 2, r.centerY() + r.height() * s / 2);
         float radius = 18 * k * s;
-        shadow.setColor(0xFF000000);
-        shadow.setShadowLayer(24 * k, 0, 12 * k, Ui.alpha(0xFF000000, 0.18f + 0.22f * f));
-        c.drawRoundRect(tmp, radius, radius, shadow);
-        shadow.clearShadowLayer();
+        dropShadow(c, tmp, radius, 24 * k, 12 * k, Ui.alpha(0xFF000000, 0.18f + 0.22f * f));
         if (b != null) {
             android.graphics.BitmapShader sh = shaders.get(b);
             if (sh == null) shaders.put(b, sh = new android.graphics.BitmapShader(b, android.graphics.Shader.TileMode.CLAMP, android.graphics.Shader.TileMode.CLAMP));
@@ -435,8 +447,7 @@ final class SportsDraw {
     void heroCard(Canvas c, RectF r, Sports.Match m, Sports.Club club) {
         boolean live = m != null && m.state == Sports.LIVE;
         fill.setColor(0xFF111111);
-        shadow.setShadowLayer(40 * k, 0, 20 * k, 0x40000000);
-        c.drawRoundRect(r, 32 * k, 32 * k, shadow);
+        dropShadow(c, r, 32 * k, 40 * k, 20 * k, 0x40000000);
         c.drawRoundRect(r, 32 * k, 32 * k, fill);
         float x = r.left + 44 * k, right = r.right - 44 * k, top = r.top + 56 * k;
         if (m == null) {

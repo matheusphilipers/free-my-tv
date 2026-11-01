@@ -744,19 +744,53 @@ final class Sports {
         return f.parse(t).getTime();
     }
 
-    static String time(long at) {
-        return new SimpleDateFormat("HH:mm", Ui.locale()).format(at);
+    // The Sports screens draw these for every card on every frame of a focus animation: a new SimpleDateFormat each
+    // time cost a 1 GB box (UniTV V10, Android 10) most of a 130 ms frame. One formatter, and each answer kept.
+    private static final java.util.HashMap<Long, String> times = new java.util.HashMap<>(), days = new java.util.HashMap<>();
+    private static SimpleDateFormat hhmm, weekday;
+    private static Locale formatted;
+    private static final java.util.HashMap<Long, String> untils = new java.util.HashMap<>();
+    private static long untilMinute = -1;
+
+    private static void formats() {
+        Locale l = Ui.locale();
+        if (l.equals(formatted)) return;
+        hhmm = new SimpleDateFormat("HH:mm", l);
+        weekday = new SimpleDateFormat("EEE dd/MM", l);
+        formatted = l;
+        times.clear();
+        days.clear();
+    }
+
+    /** Days since the epoch in this TV's time zone. */
+    private static long localDay(long t) {
+        return Math.floorDiv(t + TimeZone.getDefault().getOffset(t), 24 * 60 * 60_000L);
+    }
+
+    static synchronized String time(long at) {
+        formats();
+        String s = times.get(at);
+        if (s == null) {
+            if (times.size() > 256) times.clear();
+            times.put(at, s = hhmm.format(at));
+        }
+        return s;
     }
 
     /** "Hoje", "Amanhã", "Qua 29/10". */
-    static String day(long at) {
-        Calendar now = Calendar.getInstance(), then = Calendar.getInstance();
-        then.setTimeInMillis(at);
-        int days = (then.get(Calendar.YEAR) - now.get(Calendar.YEAR)) * 366 + then.get(Calendar.DAY_OF_YEAR) - now.get(Calendar.DAY_OF_YEAR);
-        if (days == 0) return Ui.tr("Today");
-        if (days == 1) return Ui.tr("Tomorrow");
-        String d = new SimpleDateFormat("EEE dd/MM", Ui.locale()).format(at).replace(".", "");
-        return d.isEmpty() ? d : Character.toUpperCase(d.charAt(0)) + d.substring(1);
+    static synchronized String day(long at) {
+        formats();
+        long then = localDay(at), today = localDay(System.currentTimeMillis());
+        if (then == today) return Ui.tr("Today");
+        if (then == today + 1) return Ui.tr("Tomorrow");
+        String d = days.get(then);
+        if (d == null) {
+            d = weekday.format(at).replace(".", "");
+            if (!d.isEmpty()) d = Character.toUpperCase(d.charAt(0)) + d.substring(1);
+            if (days.size() > 256) days.clear();
+            days.put(then, d);
+        }
+        return d;
     }
 
     /** "Hoje 20:00", "Amanhã 19:30", "Qua 29/10 19:30". */
@@ -765,8 +799,16 @@ final class Sports {
     }
 
     /** "em 3 dias", "em 5 h", "em 20 min". */
-    static String until(long at) {
-        long d = at - System.currentTimeMillis();
+    static synchronized String until(long at) {
+        long now = System.currentTimeMillis(), minute = now / 60_000;
+        if (minute != untilMinute) { untils.clear(); untilMinute = minute; }
+        String s = untils.get(at);
+        if (s == null) untils.put(at, s = untilText(at, now));
+        return s;
+    }
+
+    private static String untilText(long at, long now) {
+        long d = at - now;
         if (d <= 0) return "";
         if (d < 60 * 60_000L) return Ui.trf("in {n} min", "n", d / 60_000 + 1);
         if (d < 24 * 60 * 60_000L) return Ui.trf("in {n} h", "n", d / (60 * 60_000L));

@@ -489,7 +489,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         lastStep = 0;
         data.addListener(this);
         recs.addListener(this);
-        SportsLogos.setListener(() -> { sportsDirty = drawerDirty = true; wake(); });
+        SportsLogos.setListener(() -> { logoGen++; sportsDirty = drawerDirty = true; wake(); });
         Movies.get(getContext()).addListener(movieListener);
         Img.addListener(imageListener);
         Movies.get(getContext()).refreshHome(false);
@@ -1945,39 +1945,59 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             int kind = sportsKind[r];
             float titleBase = rowTitleY[r];
             if (titleBase - 60 * k - scrollY > h || rowBottom[r] + 60 * k - scrollY < 0) continue;
+            drawSportsRow(c, sd, all, r, kind, titleBase, left);
+        }
+        c.restore();
+    }
+
+    private void drawSportsRow(Canvas c, SportsDraw sd, Sports.All all, int r, int kind, float titleBase, float left) {
+        {   // one row of the Sports page (a movie row, F1, or a club)
             if (kind >= 3) {
                 if (kind - 3 < pageRows.size()) drawMovieRow(c, sd, r, pageRows.get(kind - 3));
-                continue;
+                return;
             }
-            if (all == null) continue;
+            if (all == null) return;
             if (kind == 2) {
                 Sports.F1 f = all.f1;
                 Sports.Race race = f.current;
-                sd.rowTitle(c, left, titleBase, null, "F1", Ui.tr("Formula 1"),
-                        Ui.trf("Round {n} of {total}", "n", race.round, "total", f.rounds) + " · " + race.name + (race.place.isEmpty() ? "" : ", " + race.place), true);
+                sportsTitle(c, r, titleBase, cc -> sd.rowTitle(cc, left, titleBase, null, "F1", Ui.tr("Formula 1"),
+                        Ui.trf("Round {n} of {total}", "n", race.round, "total", f.rounds) + " · " + race.name + (race.place.isEmpty() ? "" : ", " + race.place), true));
                 String tv = TextUtils.join(", ", f.tv);
                 for (int i = 0; i < sportsCols[r]; i++) {
                     Sports.Session ss = race.sessions.get(race.sessions.size() - sportsCols[r] + i);
                     boolean isRace = i == sportsCols[r] - 1;
-                    sd.sessionCard(c, sportsRects[r * SPORT_COLS + i], ss, isRace, ss == f.live, isRace ? tv : "", sportsFocus[r * SPORT_COLS + i].value);
+                    int slot = r * SPORT_COLS + i;
+                    float fv = sportsFocus[slot].value;
+                    sportsCard(c, slot, fv, cc -> sd.sessionCard(cc, sportsRects[slot], ss, isRace, ss == f.live, isRace ? tv : "", fv));
                 }
-                continue;
+                return;
             }
             Sports.Club club = kind == 0 ? all.soccer : all.hockey;
-            String summary = club.pos > 0 ? Ui.trf("{pos}th", "pos", club.pos) + " · " + club.league + " · " + club.record : club.league;
-            if (!club.cup.isEmpty()) summary += "  ·  " + club.cup;
-            sd.rowTitle(c, left, titleBase, club.me.logo, club.me.abbrev, kind == 0 ? fullName(club) : club.me.name, summary, false);
+            sportsTitle(c, r, titleBase, cc -> {
+                String summary = club.pos > 0 ? Ui.trf("{pos}th", "pos", club.pos) + " · " + club.league + " · " + club.record : club.league;
+                if (!club.cup.isEmpty()) summary += "  ·  " + club.cup;
+                sd.rowTitle(cc, left, titleBase, club.me.logo, club.me.abbrev, kind == 0 ? fullName(club) : club.me.name, summary, false);
+            });
             int col = 0;
-            sd.matchCard(c, sportsRects[r * SPORT_COLS + col], featured(club), Ui.tr("No games scheduled"), sportsFocus[r * SPORT_COLS + col].value);
+            final int first = r * SPORT_COLS;
+            float f0 = sportsFocus[first].value;
+            Sports.Match featured = featured(club);
+            sportsCard(c, first, f0, cc -> sd.matchCard(cc, sportsRects[first], featured, Ui.tr("No games scheduled"), f0));
             col++;
             List<Sports.Match> next = following(club);
             String us = club.label;
             for (int i = 0; i < 2 && i < next.size() && col < sportsCols[r]; i++, col++) {
-                sd.fixtureCard(c, sportsRects[r * SPORT_COLS + col], next.get(i), us, sportsFocus[r * SPORT_COLS + col].value);
+                int slot = r * SPORT_COLS + col;
+                float fv = sportsFocus[slot].value;
+                Sports.Match m = next.get(i);
+                sportsCard(c, slot, fv, cc -> sd.fixtureCard(cc, sportsRects[slot], m, us, fv));
             }
-            if (col < sportsCols[r]) sd.miniTable(c, sportsRects[r * SPORT_COLS + col], club.league, club.table, sportsFocus[r * SPORT_COLS + col].value);
+            if (col < sportsCols[r]) {
+                int slot = r * SPORT_COLS + col;
+                float fv = sportsFocus[slot].value;
+                sportsCard(c, slot, fv, cc -> sd.miniTable(cc, sportsRects[slot], club.league, club.table, fv));
+            }
         }
-        c.restore();
     }
 
     /** The channel isn't confirmed yet: where Brazilian football usually is (the pay-per-view first). */
@@ -2183,6 +2203,40 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private String drawerCardsKey() {
         return data.weatherAt + "|" + data.pricesAt + "|" + data.sportsAt + "|" + Prefs.version + "|" + Ui.language + "|"
                 + Float.floatToIntBits(dark()) + "|" + System.currentTimeMillis() / 60_000;
+    }
+
+    // Android 8-11: each sports card at rest (or fully focused) kept as a bitmap. Recording the whole page again on
+    // every frame of a focus move took ~60 ms on a UniTV V10 (1 GB, Android 10); now only the one or two cards in the
+    // middle of their animation are drawn live.
+    private int logoGen;
+    private final Snapshot[] sportsCards = new Snapshot[PAGE_ROWS * SPORT_COLS], sportsTitles = new Snapshot[PAGE_ROWS];
+    private final RectF cacheRect = new RectF();
+
+    private String sportsCardsKey(boolean focused) {
+        return drawerCardsKey() + "|" + logoGen + "|" + (focused ? 1 : 0);
+    }
+
+    private void sportsCard(Canvas c, int slot, float f, Consumer<Canvas> draw) {
+        if (!Ui.LEGACY || (f > 0.01f && f < 0.99f)) {
+            draw.accept(c);
+            return;
+        }
+        RectF b = sportsRects[slot];
+        // Room for the 4% the card grows and its shadow (30 blur, 14 down).
+        float m = 62 * k + b.width() * 0.03f;
+        cacheRect.set(b.left - m, b.top - m, b.right + m, b.bottom + m + 14 * k);
+        if (sportsCards[slot] == null) sportsCards[slot] = new Snapshot();
+        sportsCards[slot].draw(c, cacheRect, sportsCardsKey(f >= 0.99f), draw);
+    }
+
+    private void sportsTitle(Canvas c, int row, float titleBase, Consumer<Canvas> draw) {
+        if (!Ui.LEGACY) {
+            draw.accept(c);
+            return;
+        }
+        cacheRect.set(0, titleBase - 56 * k, w, titleBase + 22 * k);
+        if (sportsTitles[row] == null) sportsTitles[row] = new Snapshot();
+        sportsTitles[row].draw(c, cacheRect, sportsCardsKey(false), draw);
     }
 
     /**
