@@ -129,6 +129,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private final Spring sportsPage = new Spring(0.46f, 0.92f, 0);
     // Then the movie rows (the week's Top 10 and your preferences): kind 3 + the row's index in Movies.home.
     private static final int SPORT_COLS = 12, PAGE_ROWS = 8;
+    /** The sports page's row of today's games (kinds 0 to 2 are the teams, 3 and up the movie rows). */
+    private static final int TODAY_KIND = 99;
+    private List<Sports.Match> todayCards = new ArrayList<>();
     private final Spring[] sportsFocus = new Spring[PAGE_ROWS * SPORT_COLS];
     private final RectF[] sportsRects = new RectF[PAGE_ROWS * SPORT_COLS];
     private final int[] sportsKind = new int[PAGE_ROWS], sportsCols = new int[PAGE_ROWS];
@@ -169,10 +172,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private List<Recs.Pick> cards = new ArrayList<>();
     // The three tabs, then the round buttons at the top right (up to HomeApps.MAX_TOP).
     private final Spring[] topFocus = new Spring[3 + HomeApps.MAX_TOP];
-    // Light mode: the tab pill at the top center (Home, Live, Movies, Shows, Settings), in line with the corner buttons.
+    // The tab pill at the top center (Home, Search, Live, Movies, Shows, Settings), in line with the corner buttons.
     // Home is this screen; focusing another tab opens Assistir on it, which draws the same pill in the same place.
-    private static final int NAV_COUNT = 5;
-    private static final int[] NAV_TAB = {-1, MoviesActivity.T_LIVE, MoviesActivity.T_IPTV_MOVIES, MoviesActivity.T_IPTV_SHOWS, MoviesActivity.T_PREFS};
+    private static final int NAV_COUNT = 6;
+    private static final int[] NAV_TAB = {-1, MoviesActivity.T_SEARCH, MoviesActivity.T_LIVE, MoviesActivity.T_IPTV_MOVIES, MoviesActivity.T_IPTV_SHOWS, MoviesActivity.T_PREFS};
     private final Spring[] navFocus = new Spring[NAV_COUNT];
     private final RectF[] navRects = new RectF[NAV_COUNT];
     private final RectF navCapsule = new RectF();
@@ -1759,6 +1762,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             if (all.soccer != null) sportsKind[rows++] = 0;
             if (all.hockey != null) sportsKind[rows++] = 1;
             if (all.f1 != null && all.f1.current != null) sportsKind[rows++] = 2;
+            todayCards = all.today == null ? new ArrayList<>() : todayCards(all.today);
+            if (!todayCards.isEmpty() && rows < PAGE_ROWS) sportsKind[rows++] = TODAY_KIND;
+        } else {
+            todayCards = new ArrayList<>();
         }
         sportsRows = rows;
         float left = MARGIN * k, right = CONTENT_R * k, gap = 24 * k, ch = 250 * k;
@@ -1767,6 +1774,17 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             rowTitleY[r] = y;
             float top = y + 40 * k;
             int kind = sportsKind[r];
+            if (kind == TODAY_KIND) {
+                int n = Math.min(SPORT_COLS, todayCards.size());
+                for (int i = 0; i < n; i++) {
+                    float x = left + i * (290 * k + gap);
+                    sportsRects[r * SPORT_COLS + i].set(x, top, x + 290 * k, top + ch);
+                }
+                sportsCols[r] = n;
+                rowBottom[r] = top + ch;
+                y += 380 * k;
+                continue;
+            }
             if (kind >= 3) {
                 Movies.Row mr = pageRows.get(kind - 3);
                 int n = Math.min(SPORT_COLS, mr.items.size());
@@ -1808,6 +1826,34 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (rows > 0) sportsCol = Math.min(sportsCol, sportsCols[sportsRow] - 1);
         sportsDirty = true;
         motionDirty = true;
+    }
+
+    /** Today's games for the home row: on now first, then the next ones by time, then the finished ones (the last first). */
+    private static List<Sports.Match> todayCards(List<Sports.Match> all) {
+        List<Sports.Match> out = new ArrayList<>(all);
+        java.util.Collections.sort(out, (a, b) -> {
+            int ra = a.state == Sports.LIVE ? 0 : a.state == Sports.PRE ? 1 : 2, rb = b.state == Sports.LIVE ? 0 : b.state == Sports.PRE ? 1 : 2;
+            if (ra != rb) return Integer.compare(ra, rb);
+            if (a.at != b.at) return ra == 2 ? Long.compare(b.at, a.at) : Long.compare(a.at, b.at);
+            return Integer.compare(a.order, b.order);
+        });
+        return out.size() > SPORT_COLS ? new ArrayList<>(out.subList(0, SPORT_COLS)) : out;
+    }
+
+    private void drawTodayRow(Canvas c, SportsDraw sd, int r) {
+        sd.plainTitle(c, MARGIN * k, rowTitleY[r], Ui.tr("Today's games"), Ui.tr("Main Brazilian and European competitions"));
+        float sx = rowScroll[r].value;
+        c.save();
+        c.translate(-sx, 0);
+        for (int i = 0; i < sportsCols[r] && i < todayCards.size(); i++) {
+            int slot = r * SPORT_COLS + i;
+            RectF cr = sportsRects[slot];
+            if (cr.right - sx < -120 * k || cr.left - sx > w + 120 * k) continue;
+            float fv = sportsFocus[slot].value;
+            Sports.Match m = todayCards.get(i);
+            sportsCard(c, slot, fv, cc -> sd.todayCard(cc, sportsRects[slot], m, fv));
+        }
+        c.restore();
     }
 
     /** The game in the big card: on now, else the result of the last few hours, else the next one. */
@@ -1967,6 +2013,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     private void drawSportsRow(Canvas c, SportsDraw sd, Sports.All all, int r, int kind, float titleBase, float left) {
         {   // one row of the Sports page (a movie row, F1, or a club)
+            if (kind == TODAY_KIND) {
+                drawTodayRow(c, sd, r);
+                return;
+            }
             if (kind >= 3) {
                 if (kind - 3 < pageRows.size()) drawMovieRow(c, sd, r, pageRows.get(kind - 3));
                 return;
@@ -2025,6 +2075,16 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         Sports.All all = data.sports;
         if (all == null) return false;
         android.app.Activity act = (android.app.Activity) getContext();
+        if (kind == TODAY_KIND) {
+            if (col >= todayCards.size()) return false;
+            Sports.Match m = todayCards.get(col);
+            List<String> teams = java.util.Arrays.asList(m.home.name, m.away.name, m.home.abbrev, m.away.abbrev);
+            // Brazilian competitions (and the Libertadores) are usually on these; the European ones vary by country.
+            List<String> usual = m.order <= 9 ? java.util.Arrays.asList("Premiere", "SporTV", "Globo") : new ArrayList<>();
+            String sub = m.comp + " · " + (m.state == Sports.LIVE ? Ui.tr("LIVE") : Sports.when(m.at));
+            Watch.show(act, m.home.name + " × " + m.away.name, sub, m.tv, teams, usual, "soccer");
+            return true;
+        }
         if (kind == 2) {
             Sports.F1 f = all.f1;
             if (f == null || f.current == null) return false;
@@ -2048,7 +2108,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     }
 
     private static String fullName(Sports.Club club) {
-        return Config.SPORTS_SOCCER_FULL.isEmpty() ? club.me.name : Config.SPORTS_SOCCER_FULL;
+        return Sports.soccerFull().isEmpty() ? club.me.name : Sports.soccerFull();
     }
 
     /** Square drawer button: symbol and name; an input with no device is dimmed. Focused: white, with dark text. */
@@ -2828,7 +2888,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (!sheetOpen && zone == Z_SPORTS) {
             click.open();
             int kind = sportsKind[sportsRow];
-            if (kind >= 3) {
+            if (kind >= 3 && kind != TODAY_KIND) {
                 if (kind - 3 >= pageRows.size()) return;
                 Movies.Row mr = pageRows.get(kind - 3);
                 if (sportsCol < mr.items.size()) {
@@ -2841,7 +2901,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             if (Iptv.get(getContext()).connected() && getContext() instanceof android.app.Activity && watchFromHome(kind, sportsCol)) return;
             getContext().startActivity(new android.content.Intent(getContext(), SportsActivity.class)
                     .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK | android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK)
-                    .putExtra("tab", sportsKind[sportsRow]));
+                    .putExtra("tab", kind == TODAY_KIND ? 3 : kind));
             return;
         }
         if (sheetOpen) {
@@ -3615,7 +3675,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
      * night); the focused one turns white with a dark icon (the tvOS focus) and its name appears below it.
      */
     private static String[] navLabels() {
-        return new String[] {Ui.tr("tab|Home"), Ui.tr("Live"), Ui.tr("Movies"), Ui.tr("Shows"), Ui.tr("Settings")};
+        return new String[] {Ui.tr("tab|Home"), Ui.tr("Search"), Ui.tr("Live"), Ui.tr("Movies"), Ui.tr("Shows"), Ui.tr("Settings")};
     }
 
     private String[] navText = new String[0];

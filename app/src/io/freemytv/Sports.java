@@ -35,7 +35,44 @@ final class Sports {
     private static final String UA = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36";
 
     static boolean on() {
-        return Config.SHOW_SPORTS;
+        return Config.SHOW_SPORTS || Prefs.today() || (Prefs.soccerSet() && !Prefs.soccerId().isEmpty());
+    }
+
+    /** The club: the one picked on the TV, else config.properties' (whose name, full name and Sofascore id only fit that club). */
+    static String soccerId() {
+        return Prefs.soccerSet() ? Prefs.soccerId() : Config.SPORTS_SOCCER.trim();
+    }
+
+    private static boolean configClub() {
+        return soccerId().equals(Config.SPORTS_SOCCER.trim());
+    }
+
+    static String soccerName() { return configClub() ? Config.SPORTS_SOCCER_NAME : ""; }
+    static String soccerFull() { return configClub() ? Config.SPORTS_SOCCER_FULL : ""; }
+    private static String soccerSofa() { return configClub() ? Config.SPORTS_SOCCER_SOFA : ""; }
+
+    private static String soccerLeague() {
+        if (configClub()) return Config.SPORTS_SOCCER_LEAGUE.isEmpty() ? "bra.1" : Config.SPORTS_SOCCER_LEAGUE;
+        return Prefs.soccerLeague();
+    }
+
+    /** The clubs of Brazil's Série A and B right now (ESPN lists them): {label, id, league, name}. */
+    static List<String[]> brazilianClubs() throws Exception {
+        List<String[]> out = new ArrayList<>();
+        String[][] leagues = {{"bra.1", "Série A"}, {"bra.2", "Série B"}};
+        for (String[] l : leagues) {
+            JSONArray teams = new JSONObject(get("https://site.api.espn.com/apis/site/v2/sports/soccer/" + l[0] + "/teams"))
+                    .getJSONArray("sports").getJSONObject(0).getJSONArray("leagues").getJSONObject(0).getJSONArray("teams");
+            List<String[]> part = new ArrayList<>();
+            for (int i = 0; i < teams.length(); i++) {
+                JSONObject t = teams.getJSONObject(i).getJSONObject("team");
+                String name = t.optString("displayName");
+                part.add(new String[] {name + " · " + l[1], t.optString("id"), l[0], name});
+            }
+            java.util.Collections.sort(part, (a, b) -> a[3].compareToIgnoreCase(b[3]));
+            out.addAll(part);
+        }
+        return out;
     }
 
     static final class Team {
@@ -45,6 +82,7 @@ final class Sports {
     static final class Match {
         Team home = new Team(), away = new Team();
         boolean weHome;
+        int order;   // today's games: the competition's place in TODAY
         long at;
         int state = PRE;
         String homeScore = "", awayScore = "", clock = "", comp = "", venue = "";
@@ -129,7 +167,9 @@ final class Sports {
     static final class All {
         Club soccer, hockey;
         F1 f1;
+        List<Match> today;   // today's games across the main competitions (null when turned off)
         boolean anyLive() {
+            if (today != null) for (Match m : today) if (m.state == LIVE) return true;
             return soccer != null && soccer.live != null || hockey != null && hockey.live != null || f1 != null && f1.live != null;
         }
         /** Something starts within 15 minutes: refresh often. */
@@ -140,6 +180,7 @@ final class Sports {
             if (f1 != null && f1.current != null) {
                 for (Session s : f1.current.sessions) if (s.at - now < 15 * 60_000L && now - s.at < 3 * 60 * 60_000L) return true;
             }
+            if (today != null) for (Match m : today) if (m.state == PRE && m.at - now < 15 * 60_000L && now - m.at < 3 * 60 * 60_000L) return true;
             return false;
         }
     }
@@ -147,7 +188,7 @@ final class Sports {
     /** Fetches everything; a source that fails keeps what it had before (`last`). */
     static All fetch(Context c, All last) {
         All a = new All();
-        String soccer = Config.SPORTS_SOCCER.trim(), nhl = Config.SPORTS_NHL.trim();
+        String soccer = soccerId(), nhl = Config.SPORTS_NHL.trim();
         if (!soccer.isEmpty()) {
             try {
                 a.soccer = soccer(c, soccer);
@@ -173,7 +214,101 @@ final class Sports {
                 if (a.f1 != null) a.f1.roll(System.currentTimeMillis());
             }
         }
+        if (Prefs.today()) {
+            try {
+                a.today = today();
+            } catch (Exception e) {
+                AppLog.w("sports today: " + e.getMessage());
+                a.today = last != null ? last.today : null;
+            }
+        }
         return a;
+    }
+
+    // MARK: - Today's games (ESPN)
+
+    /** The competitions of today's list, in the order they show: ESPN's code and the name. */
+    private static final String[][] TODAY = {
+        {"bra.1", "Brasileirão Série A"}, {"bra.2", "Brasileirão Série B"}, {"bra.copa_do_brazil", "Copa do Brasil"},
+        {"conmebol.libertadores", "Libertadores"}, {"conmebol.sudamericana", "Sudamericana"},
+        {"bra.camp.paulista", "Paulistão"}, {"bra.camp.carioca", "Carioca"}, {"bra.camp.mineiro", "Mineiro"},
+        {"bra.camp.gaucho", "Gaúcho"}, {"bra.copa_do_nordeste", "Copa do Nordeste"},
+        {"uefa.champions", "Champions League"}, {"uefa.europa", "Europa League"}, {"eng.1", "Premier League"},
+        {"esp.1", "La Liga"}, {"ita.1", "Serie A (ITA)"}, {"ger.1", "Bundesliga"}, {"fra.1", "Ligue 1"},
+        {"por.1", "Liga Portugal"}, {"fifa.world", "World Cup"}, {"fifa.worldq.conmebol", "World Cup qualifying"},
+    };
+
+    private static long todayFullAt;
+    private static java.util.Set<Integer> todayLeagues = new java.util.HashSet<>();
+
+    /**
+     * Today's games (the TV's day) in the main Brazilian and European competitions, by competition and time. ESPN counts
+     * its days in US Eastern time, so it's asked for the Eastern day(s) the TV's day touches and the TV's day is cut from
+     * them. Every 10 min all competitions are read; in between, only the ones that have games today.
+     */
+    static List<Match> today() throws Exception {
+        Calendar day = Calendar.getInstance();
+        day.set(Calendar.HOUR_OF_DAY, 0);
+        day.set(Calendar.MINUTE, 0);
+        day.set(Calendar.SECOND, 0);
+        day.set(Calendar.MILLISECOND, 0);
+        final long from = day.getTimeInMillis();
+        day.add(Calendar.DAY_OF_MONTH, 1);
+        final long to = day.getTimeInMillis();
+        SimpleDateFormat f = new SimpleDateFormat("yyyyMMdd", Locale.US);
+        f.setTimeZone(TimeZone.getTimeZone("America/New_York"));
+        List<String> dates = new ArrayList<>();
+        dates.add(f.format(from));
+        if (!f.format(to - 1).equals(dates.get(0))) dates.add(f.format(to - 1));
+        final long now = System.currentTimeMillis();
+        final boolean full = now - todayFullAt > 10 * 60_000L || now < todayFullAt || todayLeagues.isEmpty();
+        final java.util.Set<Integer> only = new java.util.HashSet<>(todayLeagues);
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(6);
+        try {
+            List<java.util.concurrent.Future<List<Match>>> parts = new ArrayList<>();
+            for (int i = 0; i < TODAY.length; i++) {
+                if (!full && !only.contains(i)) continue;
+                final int order = i;
+                for (String date : dates) {
+                    parts.add(pool.submit(() -> {
+                        JSONArray events = new JSONObject(get("https://site.api.espn.com/apis/site/v2/sports/soccer/" + TODAY[order][0]
+                                + "/scoreboard?limit=100&dates=" + date)).optJSONArray("events");
+                        List<Match> out = new ArrayList<>();
+                        for (int j = 0; events != null && j < events.length(); j++) {
+                            Match m = espnMatch(events.getJSONObject(j), null);
+                            if (m == null || m.at < from || m.at >= to) continue;
+                            m.comp = TODAY[order][1];
+                            m.order = order;
+                            out.add(m);
+                        }
+                        return out;
+                    }));
+                }
+            }
+            java.util.Map<String, Match> all = new java.util.LinkedHashMap<>();
+            int failed = 0;
+            Exception why = null;
+            for (java.util.concurrent.Future<List<Match>> p : parts) {
+                try {
+                    for (Match m : p.get()) all.put(m.order + "|" + m.home.id + "|" + m.away.id + "|" + m.at, m);
+                } catch (Exception e) {
+                    failed++;
+                    why = e;
+                }
+            }
+            if (failed == parts.size() && !parts.isEmpty()) throw new IOException("ESPN didn't answer: " + why);
+            List<Match> out = new ArrayList<>(all.values());
+            java.util.Collections.sort(out, (x, y) -> x.order != y.order ? Integer.compare(x.order, y.order) : Long.compare(x.at, y.at));
+            if (full && failed == 0) {
+                todayFullAt = now;
+                java.util.Set<Integer> have = new java.util.HashSet<>();
+                for (Match m : out) have.add(m.order);
+                todayLeagues = have;
+            }
+            return out;
+        } finally {
+            pool.shutdown();
+        }
     }
 
     // MARK: - Football (ESPN)
@@ -205,19 +340,19 @@ final class Sports {
             if (club.cup.isEmpty()) {
                 String league = ev.optJSONObject("league") != null ? ev.getJSONObject("league").optString("name") : "";
                 JSONObject type = ev.optJSONObject("seasonType");
-                if (!league.contains("Serie A") && type != null) club.cup = leagueName(league) + " · " + roundName(type.optString("name"));
+                if (!league.contains("Serie A") && !league.contains("Serie B") && type != null) club.cup = leagueName(league) + " · " + roundName(type.optString("name"));
             }
         }
         java.util.Collections.sort(club.upcoming, (x, y) -> Long.compare(x.at, y.at));
         Match any = club.live != null ? club.live : !club.upcoming.isEmpty() ? club.upcoming.get(0) : club.recent;
         if (any != null) club.me = any.us();
-        club.label = Config.SPORTS_SOCCER_NAME.isEmpty() ? club.me.name : Config.SPORTS_SOCCER_NAME;
+        club.label = soccerName().isEmpty() ? club.me.name : soccerName();
         try {
             soccerTable(club, teamId);
         } catch (Exception e) {
             AppLog.w("sports soccer table: " + e.getMessage());
         }
-        tv(ctx, Config.SPORTS_SOCCER_SOFA, "football", club);
+        tv(ctx, soccerSofa(), "football", club);
         return club;
     }
 
@@ -239,9 +374,9 @@ final class Sports {
             }
             boolean home = "home".equals(t.optString("homeAway"));
             if (home) { m.home = x; m.homeScore = espnScore(t); } else { m.away = x; m.awayScore = espnScore(t); }
-            if (teamId.equals(x.id)) { found = true; m.weHome = home; }
+            if (teamId != null && teamId.equals(x.id)) { found = true; m.weHome = home; }
         }
-        if (!found) return null;
+        if (teamId != null && !found) return null;
         JSONObject league = ev.optJSONObject("league");
         m.comp = league != null ? leagueName(league.optString("name")) : "";
         JSONObject type = ev.optJSONObject("seasonType");
@@ -270,7 +405,7 @@ final class Sports {
     }
 
     private static void soccerTable(Club club, String teamId) throws Exception {
-        String league = Config.SPORTS_SOCCER_LEAGUE.isEmpty() ? "bra.1" : Config.SPORTS_SOCCER_LEAGUE;
+        String league = soccerLeague();
         JSONObject o = new JSONObject(get("https://site.api.espn.com/apis/v2/sports/soccer/" + league + "/standings"));
         club.league = leagueName(o.optString("name"));
         JSONArray children = o.optJSONArray("children");

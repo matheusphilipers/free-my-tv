@@ -25,6 +25,9 @@ before you do it, and let them do the taps on the TV.
    - Windows: Git Bash (what Claude Code runs there; `build.sh` handles it) or WSL, then as on Linux.
 3. **Settings:** run `./build.sh` once; it creates `config.properties`. Fill in `latitude` and `longitude` (decimal
    degrees) and `city` for their city, `tmdb_region` (two-letter country), `show_crypto`, `currency` and `temperature` to match.
+   `screensaver=google` keeps the TV's own screensaver (Google's ambient mode: the person's Google Photos albums, picked
+   in the Google Home app on their phone) instead of ours; the default `freemytv` is ours. Google has closed the Photos
+   library API to other apps, so there is no way for Free My TV to show their photos itself.
 4. **The TMDB key is theirs and secret.** Ask them to create one (free: themoviedb.org → Settings → API) and paste it
    after `tmdb_key=` in `config.properties` themselves. Don't ask for it in the chat, never print it, never commit
    it. If they paste it in the chat anyway, put it only in `config.properties`.
@@ -37,6 +40,11 @@ before you do it, and let them do the taps on the TV.
    TCL's `TclAppBoot` blocks background jobs by default, so the switch (and the watchdog) never run. The log shows
    `forbid bind service ... ModeJob`. Some TCL firmware has neither (a 2024 MediaTek Google TV, Android 14, has no
    `TclAppBoot`): both names answer `Unknown operation string`, and nothing needs allowing.
+   A Chromecast with Google TV (HD tested, Android 14) has no "USB debugging" over the network, only *Wireless
+   debugging*: `adb pair <IP>:<pairing port>` (the code is typed by them, in their own terminal), then `adb connect
+   <IP>:<connect port>` (a different port, and it changes whenever the TV restarts). Free My TV's own ADB uses
+   `127.0.0.1:5555`, and that port is closed there: from the computer, `adb tcpip 5555`, then `adb connect <IP>:5555`
+   (it closes again when the TV restarts; the switch's boot check needs it open too). `adb` on WSL can be Windows' own.
    On a Mac, `adb connect` can fail with `No route to host` while the TV answers (`nc -z <IP> 5555` connects): macOS's
    Local Network privacy blocks the adb server that adb starts in the background. Start it from the same terminal
    instead (`adb kill-server; adb nodaemon server &`), or allow the terminal app under System Settings → Privacy &
@@ -177,7 +185,7 @@ HDMI (Chromecast with Google TV, Google TV Streamer, onn 4K, NVIDIA Shield). Set
   size, so both draw pixel for pixel.
 - Light mode (`Lite`): on devices with up to 1.5 GB of memory (or `lite=on` in `config.properties`, or *Assistir* →
   *Ajustes* → *Modo leve* on the TV) `Lite.tmdbKey()` is empty, so every TMDB screen behaves as with no key; Assistir
-  shows only the IPTV tabs, a show opens its episodes from the list (`MoviesActivity.openShow`), `Iptv` builds no title
+  shows the IPTV tabs and Search (your lists' movies, shows and channels; the catalogue part needs the key), a show opens its episodes from the list (`MoviesActivity.openShow`), `Iptv` builds no title
   index and there's no mosaic. Use `Lite.tmdbKey()`, never `Config.TMDB_KEY`, to decide whether TMDB is on.
   The home screen's tab pill (`HomeView.drawNav`, zone `Z_NAV`, in both versions; in cinema mode the clock drops the
   date if it would reach the pill) opens Assistir with the same pill in the same place;
@@ -219,7 +227,34 @@ HDMI (Chromecast with Google TV, Google TV Streamer, onn 4K, NVIDIA Shield). Set
   the key to the TV. Sony ships its own Apple TV build, `com.apple.atve.sony.appletv`.
   Xiaomi projectors made by Formovie (Fengmi; L1, MediaTek, Google TV 14 tested) send the same `KEYCODE_STEM_1` for
   Netflix (`RemoteKeys.STEM_NETFLIX`); their YouTube button goes to MediaTek's `GlobalKeyReceiver` and stays with the system.
-- After any change, `./build.sh` must end with `Built FreeMyTV.apk`.
+- After any change, `./build.sh` must end with `Built FreeMyTV.apk`. It writes `versionName` as `1.1 (<git hash>)`
+  (`+` after the hash with uncommitted changes) into a copy of the manifest, `out/AndroidManifest.xml` (aapt2's
+  `--version-name` doesn't replace a version the manifest already has); the main menu of Free My TV shows it. Build
+  after committing, so the hash on the TV is the commit it came from.
+- Screensaver: `screensaver=google` (`HomeMode.googleSaver()`): `targets` leaves the TV's screensaver app
+  (`com.google.android.apps.tv.dreamx` on Google TV) out of the apps turned off, the switch turns it back on and
+  restores `screensaver_components` (`restoreScreensaver`), and `verifyNow` doesn't put `DREAM` back (it takes `DREAM`
+  out if a stale copy is there). Without it the check below puts ours back after every boot.
+- Sports (`Sports`, `SportsView`, `SportsDraw`, `HomeView`; no keys, all ESPN except the TV channels):
+  - The football club can be picked on the TV (Home Settings → *Football team*): `Sports.brazilianClubs()` reads Série A
+    (`bra.1`) and B (`bra.2`) from ESPN at that moment, and `Prefs.soccer*` wins over `sports_soccer*` in
+    config.properties (`Prefs.soccerSet()`, "" is none). `Sports.soccerId/Name/Full/Sofa/League` choose which; the
+    name, full name and Sofascore id of config.properties only go with that club, so another club shows no TV channel.
+  - Today's games: `Sports.today()` reads the scoreboard of each competition in `TODAY` (Brazilian and European ones,
+    in that order) in a pool of 6. ESPN counts its days in US Eastern time (a range of dates answers 400), so it asks
+    for the Eastern day(s) the TV's day touches and cuts the TV's day out of them. Every 10 min all competitions are
+    read; in between only those that had games (`todayLeagues`). On by default (`Prefs.today()`, Home Settings →
+    *Today's games*; `Sports.on()` is true with it, so the Sports card shows without a club). Shown as the first tab of
+    `SportsView` (kind 3; ↑ ↓ scroll) and as a row of up to 12 cards (`TODAY_KIND` in `HomeView`, live first) under the
+    clubs on the home sports page; OK opens "Onde assistir" (`Watch.show`) with the teams' names. The README's
+    "Eventos do dia" are the IPTV lists' events, another thing.
+  - Home Settings has 13 rows with BRL: `pop` holds 16 springs and `tight()` makes the rows shorter above 11 so the list
+    and its hint fit the 1080 px; adding a row means checking both (an overflow crashed `drawRowBackground`).
+- Search: Assistir's *Buscar* also exists in light mode: it looks in the lists' categories (`Iptv.searchOne`, kept in
+  light mode; the title index isn't) and the channels (`Lineup`), and skips the TMDB catalogue when `Lite.tmdbKey()` is
+  empty. The home screen's pill has six tabs (`NAV_COUNT`, `NAV_TAB`, `navLabels`) and the Assistir one must match its
+  labels. The remote's mic reaches the app only if Free My TV is the TV's assistant (`cmd role add-role-holder
+  android.app.role.ASSISTANT io.freemytv`; a Chromecast's is `com.google.android.katniss`): that gives up "Ok Google".
 - LG and Samsung (`web/`): plain ES5 JavaScript and CSS without variables, grid or backdrop-filter, since older TVs
   (webOS 3 and 4, Tizen 3) run a Chromium from 2015 to 2017; only transform and opacity animate. `web/tv.js` is the
   TV's side: on LG, Luna (`listLaunchPoints`, `launch`, the inputs; where webOS 6 and newer deny `listLaunchPoints`
@@ -255,3 +290,4 @@ HDMI (Chromecast with Google TV, Google TV Streamer, onn 4K, NVIDIA Shield). Set
   *Original* can bring it back.
 - Don't change the TV's picture, sound, network or account settings.
 - Keep the way back working: the *Original* mode and the watchdog.
+- Before sending keys to a TV with `adb shell input`, remember the person may be watching it: don't, unless they ask.

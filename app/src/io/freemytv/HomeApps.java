@@ -261,7 +261,7 @@ final class HomeApps {
         List<Item> items = new ArrayList<>();
         // Light mode: Movies & Shows is your IPTV lists' movies and shows (or the form to add a list), no TMDB.
         if (Lite.on() || !Lite.tmdbKey().trim().isEmpty()) items.add(shortcut(MOVIES, "movies", Ui.tr("Movies & Shows"), "play"));
-        if (Config.SHOW_SPORTS) items.add(shortcut(SPORTS, "sports", Ui.tr("Sports"), "live_tv"));
+        if (Sports.on()) items.add(shortcut(SPORTS, "sports", Ui.tr("Sports"), "live_tv"));
         if (iptvOn) items.add(Math.min(1, items.size()), shortcut(CHANNELS, "channels", Ui.tr("Channels"), "tv"));
         items.add(shortcut(ALL_APPS, "all", Ui.tr("All Apps"), "apps"));
         items.add(shortcut(SETTINGS, "settings", Ui.tr("Home Settings"), "settings"));

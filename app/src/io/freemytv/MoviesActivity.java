@@ -64,10 +64,8 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
         List<Object[]> names = new ArrayList<>();
         boolean lists = Iptv.get(this).connected();
         names.add(new Object[] {Ui.tr("tab|Home"), T_HOME});
-        if (!Lite.on()) {
-            names.add(new Object[] {"Buscar", T_SEARCH});
-            names.add(new Object[] {"Para você", T_EXPLORE});
-        }
+        names.add(new Object[] {Ui.tr("Search"), T_SEARCH});   // your lists' movies, shows and channels (and TMDB's, with a key)
+        if (!Lite.on()) names.add(new Object[] {"Para você", T_EXPLORE});
         names.add(new Object[] {Ui.tr("Live"), T_LIVE});
         names.add(new Object[] {Ui.tr("Movies"), T_IPTV_MOVIES});
         names.add(new Object[] {Ui.tr("Shows"), T_IPTV_SHOWS});
@@ -93,7 +91,7 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
         ((LinearLayout.LayoutParams) content.getLayoutParams()).weight = 1;
         setContentView(root);
         int first = getIntent().getIntExtra("tab", T_EXPLORE);
-        // A tab this version doesn't have (light mode: the TMDB ones, the search, the mic) opens your lists' movies,
+        // A tab this version doesn't have (light mode: the TMDB ones) opens your lists' movies,
         // or Ajustes to add a list.
         if (!tabIds.contains(first) || first == T_HOME) first = Lite.on() ? (lists ? T_IPTV_MOVIES : T_PREFS) : T_EXPLORE;
         // The pill shows on the very first frame, exactly where the home screen's was; the tab fills in right after.
@@ -115,7 +113,6 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
             }
         });
         tabs.get(Math.max(0, tabIds.indexOf(tab))).requestFocus();
-        if (Lite.on()) return;
         if (getIntent().getBooleanExtra("voice", false)) root.post(this::voiceSearch);
         if (Iptv.get(this).connected()) movies.run(() -> Lineup.get(this), l -> {});   // channels ready for the search
     }
@@ -1446,6 +1443,10 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
             iptvRow("Séries nas suas listas", shows);
             if (chanRow != null && !channelFirst) results.addView(chanRow);
             if (group != null || (games && mine.isEmpty())) return;   // a group or a team: no need for the catalog
+            if (Lite.tmdbKey().trim().isEmpty()) {   // light mode or no key: only your lists and channels
+                if (results.getChildCount() == 0) results.addView(ui.text("Nada encontrado para “" + q + "”.", 21, Ui.medium, ui.dim), ui.margins(WRAP, WRAP, 4, 20, 0, 0));
+                return;
+            }
             TextView wait = ui.text("Buscando no catálogo…", 21, Ui.medium, ui.dim);
             results.addView(wait, ui.margins(WRAP, WRAP, 4, 20, 0, 0));
             String said = Speech.clean(q).isEmpty() ? q : Speech.clean(q);
@@ -1629,7 +1630,7 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
                 List<Sports.Match> matches = new ArrayList<>();
                 if (club.live != null) matches.add(club.live);
                 matches.addAll(club.upcoming);
-                boolean ours = matchesName(n, club.label, club.me.name, club.me.abbrev, kind == 0 ? Config.SPORTS_SOCCER_FULL : "");
+                boolean ours = matchesName(n, club.label, club.me.name, club.me.abbrev, kind == 0 ? Sports.soccerFull() : "");
                 int shown = 0;
                 for (Sports.Match m : matches) {
                     if (shown >= 2) break;
