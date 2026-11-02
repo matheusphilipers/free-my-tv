@@ -4,7 +4,7 @@ Tudo o que mudou no Free My TV, da versão mais nova para a mais antiga. O app a
 `1.1` do manifesto: o que está na tela da TV é `1.1 (<código do commit>)`, e este arquivo diz o que cada grupo de
 commits trouxe. Quando uma versão sair, o título "Próxima versão" ganha o número e a data.
 
-## Próxima versão (branch `feature/esportes-busca-protetor`, a subir para a `main`)
+## Próxima versão (branch `feature/esportes-busca`, a subir para a `main`)
 
 ### Adicionado
 
