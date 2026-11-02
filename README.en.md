@@ -116,6 +116,7 @@ The first values come from `config.properties`, created by the first build (Goog
 | `show_crypto` | Show Binance crypto prices on home and screensaver | `true` |
 | `currency` | Crypto prices in `USD`, `EUR`, `BRL`… | `USD` |
 | `temperature` | `C`, `F` or `auto` | `auto` |
+| `screensaver` | `freemytv` (ours) or `google`: the TV's own, Google's ambient mode with your Google Photos albums (picked in the Google Home app) | `freemytv` |
 | `disable_assistant` | Also turn off Google Assistant | `false` |
 | `hide_services` | Streaming services to leave out of the picks even when their app is on the TV (`netflix`, `prime`, `disney`…), comma separated; for apps the TV ships that you don't subscribe to. Google TV only | empty |
 | `hide_apps` | Apps to leave out of the shelf, All Apps and the picks, by id or name (part of it), comma separated; for apps the TV ships that can't be uninstalled, like Samsung's built-in Netflix. LG and Samsung only | empty |
@@ -136,11 +137,11 @@ With a free [Watchmode](https://api.watchmode.com/) key (`watchmode_key=` in `co
 This fork has two versions in one app, picked by the device's memory:
 
 - **Full**, on TVs and boxes with 2 GB or more: everything above, plus the fork's Assistir screen (Search, For You, Live, Movies, Shows, Discover), TMDB pages and the mosaic.
-- **Light**, on 1 GB TV boxes: the home screen keeps the clock, weather, shelf and sports, with an Apple TV-style tab pill at the top center (Home, Live, Movies, Shows, Settings) in line with the corner buttons: moving along it switches the screen, and Home or Back returns with the pill in the same place. Assistir shows only your IPTV lists. A movie plays straight away; a show opens its seasons and episodes from the list. No TMDB calls, no title index, no mosaic.
+- **Light**, on 1 GB TV boxes: the home screen keeps the clock, weather, shelf and sports, with an Apple TV-style tab pill at the top center (Home, Search, Live, Movies, Shows, Settings) in line with the corner buttons: moving along it switches the screen, and Home or Back returns with the pill in the same place. Assistir shows Search and your IPTV lists (no TMDB catalogue). A movie plays straight away; a show opens its seasons and episodes from the list. No TMDB calls, no title index, no mosaic.
 
 On devices with up to 1.5 GB of memory Light turns on by itself. To force one: on the TV, *Assistir* → *Ajustes* → *Modo leve* (*Automático*, *Ligado*, *Desligado*; applies after the app starts again), or `lite=on` / `lite=off` in `config.properties`.
 
-Both versions have the tab pill on the home screen (Home, Live, Movies, Shows, Settings); in Full, Assistir's pill also has Search, For You and Discover. The lighter Sports page applies to both, on any Android 8 to 11 device.
+Both versions have the tab pill on the home screen (Home, Search, Live, Movies, Shows, Settings); in Full, Assistir's pill also has For You and Discover. The lighter Sports page applies to both, on any Android 8 to 11 device.
 
 Tested on a UniTV V10 (Allwinner H313, 1 GB, Android 10, 720p UI): the sports page went from ~120 ms to ~19 ms a frame while moving between cards. On Android 8 to 11, resting sports cards are kept as bitmaps and only the one or two cards in their focus animation are drawn again.
 
