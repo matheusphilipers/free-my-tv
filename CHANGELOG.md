@@ -2,12 +2,18 @@
 
 Tudo o que mudou no Free My TV, da versão mais nova para a mais antiga. O que está na tela da TV é
 `<versão> (<código do commit>)`, por exemplo `1.2 (ab12cd3)`; os pacotes da LG e da Samsung têm a versão própria
-(`1.1.0`), que só muda quando o `web/` muda.
+(`1.2.0` desde o Esportes na web), que só muda quando o `web/` muda.
 
 ## 1.2 (2026-11-02)
 
 ### Adicionado
 
+- **Esportes nas TVs LG e Samsung.** O atalho **Esportes** da gaveta (↓ na prateleira) abre a lista dos jogos de hoje dos
+  mesmos campeonatos do Android (ao vivo em vermelho, os próximos por horário, os encerrados) e, com um time escolhido, os
+  3 próximos jogos dele no topo. O time se escolhe em *Ajustes do Início → Time de futebol* (ou na primeira linha da
+  própria lista), com as Séries A e B; *Jogos de hoje* liga e desliga. Só lê o ESPN com a lista aberta e guarda a última
+  resposta. Os pacotes da LG e da Samsung passam a `1.2.0`. Buscar, a pílula e o protetor do Google não existem na versão
+  web (ela não tem IPTV nem protetor próprio).
 - **Time de futebol escolhido na TV.** *Ajustes do Início → Time de futebol* abre a lista das Séries A e B do
   Brasileirão, lida do ESPN na hora (acompanha as subidas e descidas de cada ano), com *Nenhum* na primeira linha. O
   que se escolhe na TV vale mais que o `sports_soccer` do `config.properties`. O time da Série B tem jogos, tabela e
