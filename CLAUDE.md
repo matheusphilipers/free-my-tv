@@ -177,7 +177,7 @@ HDMI (Chromecast with Google TV, Google TV Streamer, onn 4K, NVIDIA Shield). Set
   size, so both draw pixel for pixel.
 - Light mode (`Lite`): on devices with up to 1.5 GB of memory (or `lite=on` in `config.properties`, or *Assistir* →
   *Ajustes* → *Modo leve* on the TV) `Lite.tmdbKey()` is empty, so every TMDB screen behaves as with no key; Assistir
-  shows only the IPTV tabs, a show opens its episodes from the list (`MoviesActivity.openShow`), `Iptv` builds no title
+  shows the IPTV tabs and Search (your lists' movies, shows and channels; the catalogue part needs the key), a show opens its episodes from the list (`MoviesActivity.openShow`), `Iptv` builds no title
   index and there's no mosaic. Use `Lite.tmdbKey()`, never `Config.TMDB_KEY`, to decide whether TMDB is on.
   The home screen's tab pill (`HomeView.drawNav`, zone `Z_NAV`, in both versions; in cinema mode the clock drops the
   date if it would reach the pill) opens Assistir with the same pill in the same place;

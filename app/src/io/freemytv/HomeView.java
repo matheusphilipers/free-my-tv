@@ -172,10 +172,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private List<Recs.Pick> cards = new ArrayList<>();
     // The three tabs, then the round buttons at the top right (up to HomeApps.MAX_TOP).
     private final Spring[] topFocus = new Spring[3 + HomeApps.MAX_TOP];
-    // Light mode: the tab pill at the top center (Home, Live, Movies, Shows, Settings), in line with the corner buttons.
+    // The tab pill at the top center (Home, Search, Live, Movies, Shows, Settings), in line with the corner buttons.
     // Home is this screen; focusing another tab opens Assistir on it, which draws the same pill in the same place.
-    private static final int NAV_COUNT = 5;
-    private static final int[] NAV_TAB = {-1, MoviesActivity.T_LIVE, MoviesActivity.T_IPTV_MOVIES, MoviesActivity.T_IPTV_SHOWS, MoviesActivity.T_PREFS};
+    private static final int NAV_COUNT = 6;
+    private static final int[] NAV_TAB = {-1, MoviesActivity.T_SEARCH, MoviesActivity.T_LIVE, MoviesActivity.T_IPTV_MOVIES, MoviesActivity.T_IPTV_SHOWS, MoviesActivity.T_PREFS};
     private final Spring[] navFocus = new Spring[NAV_COUNT];
     private final RectF[] navRects = new RectF[NAV_COUNT];
     private final RectF navCapsule = new RectF();
@@ -3675,7 +3675,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
      * night); the focused one turns white with a dark icon (the tvOS focus) and its name appears below it.
      */
     private static String[] navLabels() {
-        return new String[] {Ui.tr("tab|Home"), Ui.tr("Live"), Ui.tr("Movies"), Ui.tr("Shows"), Ui.tr("Settings")};
+        return new String[] {Ui.tr("tab|Home"), Ui.tr("Search"), Ui.tr("Live"), Ui.tr("Movies"), Ui.tr("Shows"), Ui.tr("Settings")};
     }
 
     private String[] navText = new String[0];
