@@ -59,6 +59,7 @@ if [ -n "$GITREV" ]; then
 fi
 
 rm -rf out && mkdir -p out/gen/io/freemytv out/classes
+sed "s|android:versionName=\"[^\"]*\"|android:versionName=\"$VERSION\"|" app/AndroidManifest.xml > out/AndroidManifest.xml
 cat > out/gen/io/freemytv/Config.java <<EOF
 package io.freemytv;
 
@@ -97,7 +98,7 @@ EOF
 # --- Build
 "$BT/aapt2" compile --dir app/res -o out/res.zip
 # Fonts uncompressed: Android reads them straight from the APK.
-"$BT/aapt2" link -o out/base.apk -I "$AJ" --manifest app/AndroidManifest.xml --version-name "$VERSION" --java out/gen out/res.zip \
+"$BT/aapt2" link -o out/base.apk -I "$AJ" --manifest out/AndroidManifest.xml --java out/gen out/res.zip \
   --min-sdk-version 26 --target-sdk-version 33 -A app/assets -0 ttf
 # Windows aapt2 packs assets with backslash separators ("assets/symbols\x.png") and Android
 # cannot find them: the home screen loses its icons and fonts. Rename the zip entries to "/".
