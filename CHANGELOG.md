@@ -1,10 +1,10 @@
 # Changelog
 
-Tudo o que mudou no Free My TV, da versão mais nova para a mais antiga. O app ainda não tem versões numeradas além do
-`1.1` do manifesto: o que está na tela da TV é `1.1 (<código do commit>)`, e este arquivo diz o que cada grupo de
-commits trouxe. Quando uma versão sair, o título "Próxima versão" ganha o número e a data.
+Tudo o que mudou no Free My TV, da versão mais nova para a mais antiga. O que está na tela da TV é
+`<versão> (<código do commit>)`, por exemplo `1.2 (ab12cd3)`; os pacotes da LG e da Samsung têm a versão própria
+(`1.1.0`), que só muda quando o `web/` muda.
 
-## Próxima versão (branch `feature/esportes-busca`, a subir para a `main`)
+## 1.2 (2026-11-02)
 
 ### Adicionado
 
@@ -34,7 +34,7 @@ commits trouxe. Quando uma versão sair, o título "Próxima versão" ganha o n�
   a cada boot, não desliga o app do protetor (`dreamx`) e o liga de novo se estiver desligado. O padrão continua
   `screensaver=freemytv`. O Google fechou a API do Google Fotos para outros apps, então não há como o Free My TV mostrar
   as suas fotos sozinho.
-- **Versão na TV com o commit.** O menu principal mostra `Free My TV 1.1 (51a8cf5)`: o código do commit de onde o app foi
+- **Versão na TV com o commit.** O menu principal mostra `Free My TV 1.2 (ab12cd3)`: o código do commit de onde o app foi
   compilado, com um `+` quando há mudanças ainda não commitadas.
 - **Chromecast com Google TV (testado no HD, Android 14).** O `CLAUDE.md` explica o caminho pela *Depuração por Wi-Fi*
   (`adb pair`, porta de conexão que muda, e `adb tcpip 5555` para a porta que o app usa por dentro).

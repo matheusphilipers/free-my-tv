@@ -227,7 +227,7 @@ HDMI (Chromecast with Google TV, Google TV Streamer, onn 4K, NVIDIA Shield). Set
   the key to the TV. Sony ships its own Apple TV build, `com.apple.atve.sony.appletv`.
   Xiaomi projectors made by Formovie (Fengmi; L1, MediaTek, Google TV 14 tested) send the same `KEYCODE_STEM_1` for
   Netflix (`RemoteKeys.STEM_NETFLIX`); their YouTube button goes to MediaTek's `GlobalKeyReceiver` and stays with the system.
-- After any change, `./build.sh` must end with `Built FreeMyTV.apk`. It writes `versionName` as `1.1 (<git hash>)`
+- After any change, `./build.sh` must end with `Built FreeMyTV.apk`. It writes `versionName` as `<versionName> (<git hash>)`
   (`+` after the hash with uncommitted changes) into a copy of the manifest, `out/AndroidManifest.xml` (aapt2's
   `--version-name` doesn't replace a version the manifest already has); the main menu of Free My TV shows it. Build
   after committing, so the hash on the TV is the commit it came from.
