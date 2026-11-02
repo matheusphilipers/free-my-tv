@@ -310,7 +310,13 @@ final class HomeMode {
             Watchdog.clear(c);
             check(adb.shell("cmd package set-home-activity " + HOME_ACTIVITY), "Success",
                     Ui.tr("Android didn't accept the new home screen"));
-            adb.shell("settings put secure screensaver_components " + DREAM);
+            if (googleSaver()) {
+                String dreamPkg = packageOf(dream);
+                if (dreamPkg != null && !dreamPkg.equals(PKG)) adb.shell("pm enable --user 0 " + dreamPkg);
+                restoreScreensaver(adb, latest);
+            } else {
+                adb.shell("settings put secure screensaver_components " + DREAM);
+            }
             JSONObject started = state(c);
             started.put("mode", FREE).put("homeReverted", false).put("setupHome", setupHome);
             save(c, started);
@@ -572,6 +578,17 @@ final class HomeMode {
                 }
                 for (String pkg : sorted(wanted)) if (!order.contains(pkg)) order.add(pkg);
                 Set<String> disabled = new HashSet<>(stringList(s, "disabled"));
+                String googlePkg = googleSaver() ? packageOf(dream) : null;
+                if (googlePkg != null && !googlePkg.equals(PKG)) {
+                    // The TV's own screensaver stays: on, and not in the list Original turns on.
+                    wanted.remove(googlePkg);
+                    order.remove(googlePkg);
+                    disabled.remove(googlePkg);
+                    if (disabledNow.remove(googlePkg)) {
+                        adb.shell("pm enable --user 0 " + googlePkg);
+                        AppLog.w("turned the TV's screensaver back on: " + googlePkg);
+                    }
+                }
                 // Off before Free My TV: turned off again if a TV update brings one back, but never handed to
                 // Original to turn on.
                 List<String> keptOff = stringList(s, "keptOff");
@@ -619,7 +636,12 @@ final class HomeMode {
                     fixed.add(Ui.tr("the home screen"));
                 }
                 // Whole component names: ".ScreensaverAlone" (Android 11) contains ".Screensaver" (12 and newer).
-                if (!reverted && !Arrays.asList(adb.shell("settings get secure screensaver_components").trim().split(",")).contains(DREAM)) {
+                if (googleSaver()) {
+                    if (!reverted && Arrays.asList(adb.shell("settings get secure screensaver_components").trim().split(",")).contains(DREAM)) {
+                        restoreScreensaver(adb, s);
+                        fixed.add(Ui.tr("the screensaver"));
+                    }
+                } else if (!reverted && !Arrays.asList(adb.shell("settings get secure screensaver_components").trim().split(",")).contains(DREAM)) {
                     adb.shell("settings put secure screensaver_components " + DREAM);
                     fixed.add(Ui.tr("the screensaver"));
                 }
@@ -646,6 +668,11 @@ final class HomeMode {
      * screen off and it still on, its RecoveryActivity takes the Home button, and a restart there factory-reset a Xiaomi
      * (CleanYourTV, MiTV-MOSR4). Android's bare "fallback home" is never turned off.
      */
+    /** screensaver=google in config.properties: the TV's own screensaver stays (and stays on) in Free My TV mode. */
+    private static boolean googleSaver() {
+        return "google".equalsIgnoreCase(Config.SCREENSAVER.trim());
+    }
+
     private static List<String> targets(String home, String dream, boolean setupHome) {
         List<String> out = new ArrayList<>();
         String homePkg = home.contains("FallbackHome") ? null : packageOf(home);
@@ -653,7 +680,7 @@ final class HomeMode {
         if (homePkg != null && !homePkg.equals(PKG)) out.add(homePkg);
         if (TV_LAUNCHER.equals(homePkg)) out.add(TV_RECOMMENDATIONS);
         String dreamPkg = packageOf(dream);
-        if (dreamPkg != null && !dreamPkg.equals(PKG) && !dreamPkg.equals(homePkg)) out.add(dreamPkg);
+        if (dreamPkg != null && !dreamPkg.equals(PKG) && !dreamPkg.equals(homePkg) && !googleSaver()) out.add(dreamPkg);
         out.addAll(Arrays.asList(DEBLOAT));
         if (Config.DISABLE_ASSISTANT) out.addAll(Arrays.asList(ASSISTANT));
         return out;
