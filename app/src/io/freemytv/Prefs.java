@@ -119,6 +119,21 @@ final class Prefs {
     static boolean quotes() { return sp().getBoolean("quotes", Config.SHOW_CRYPTO); }
     static void setQuotes(boolean on) { put("quotes", on); }
 
+    /** Today's games (Sports > Today): on unless turned off in Home Settings. */
+    static boolean today() { return app != null && sp().getBoolean("today", true); }
+    static void setToday(boolean on) { put("today", on); }
+
+    /** The football club picked on the TV (Home Settings > Football team) wins over config.properties; "" is "none". */
+    static boolean soccerSet() { return app != null && sp().contains("soccerId"); }
+    static String soccerId() { return sp().getString("soccerId", ""); }
+    static String soccerName() { return sp().getString("soccerName", ""); }
+    static String soccerLeague() { return sp().getString("soccerLeague", "bra.1"); }
+
+    static void setSoccer(String id, String name, String league) {
+        sp().edit().putString("soccerId", id).putString("soccerName", name).putString("soccerLeague", league).apply();
+        version++;
+    }
+
     static boolean coin(int i) { return sp().getBoolean("coin" + i, true); }
     static void setCoin(int i, boolean on) { put("coin" + i, on); }
 

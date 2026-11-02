@@ -357,6 +357,32 @@ final class SportsDraw {
         }
     }
 
+    /** One of today's games: the time (or LIVE and the minute, or full time), both crests with the score between, the names and the competition. */
+    void todayCard(Canvas c, RectF r, Sports.Match m, float f) {
+        boolean focused = f > 0.5f, live = m.state == Sports.LIVE;
+        RectF b = new RectF(card(c, r, f, f > 0.01f ? 0xFFFFFFFF : 0));
+        float cx = b.centerX(), w = b.width() - 40 * k;
+        String head = live ? (m.clock.isEmpty() ? Ui.tr("LIVE") : Ui.tr("LIVE") + " · " + m.clock)
+                : m.state == Sports.FINAL ? Ui.tr("FULL TIME") : Sports.time(m.at);
+        text(Ui.semibold, live ? 19 : 22, live ? LIVE_RED : dim(focused));
+        center(c, head, cx, b.top + 44 * k, w);
+        float cy = b.top + 100 * k, size = 54 * k, gap = 40 * k;
+        crest(c, m.home.logo, m.home.abbrev, cx - gap - size / 2, cy, size, false);
+        crest(c, m.away.logo, m.away.abbrev, cx + gap + size / 2, cy, size, false);
+        if (m.state == Sports.PRE) {
+            text(Ui.semibold, 20, faint(focused));
+            center(c, "×", cx, cy + 7 * k, 0);
+        } else {
+            text(Ui.semibold, 24, live ? LIVE_RED : ink(focused));
+            center(c, m.homeScore + "–" + m.awayScore, cx, cy + 9 * k, 0);
+        }
+        text(Ui.semibold, 19, ink(focused));
+        center(c, m.home.name, cx, b.top + 168 * k, w);
+        center(c, m.away.name, cx, b.top + 194 * k, w);
+        text(Ui.medium, 16, dim(focused));
+        center(c, m.comp, cx, b.top + 228 * k, w);
+    }
+
     /** A following game: when, the two logos, who, the competition and the channel. */
     void fixtureCard(Canvas c, RectF r, Sports.Match m, String us, float f) {
         boolean focused = f > 0.5f;

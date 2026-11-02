@@ -1629,7 +1629,7 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
                 List<Sports.Match> matches = new ArrayList<>();
                 if (club.live != null) matches.add(club.live);
                 matches.addAll(club.upcoming);
-                boolean ours = matchesName(n, club.label, club.me.name, club.me.abbrev, kind == 0 ? Config.SPORTS_SOCCER_FULL : "");
+                boolean ours = matchesName(n, club.label, club.me.name, club.me.abbrev, kind == 0 ? Sports.soccerFull() : "");
                 int shown = 0;
                 for (Sports.Match m : matches) {
                     if (shown >= 2) break;

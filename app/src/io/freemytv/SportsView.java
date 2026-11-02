@@ -50,6 +50,7 @@ final class SportsView extends View implements HomeData.Listener {
         tabs.clear();
         Sports.All a = data.sports;
         if (a == null) return;
+        if (a.today != null) tabs.add(3);
         if (a.soccer != null) tabs.add(0);
         if (a.hockey != null) tabs.add(1);
         if (a.f1 != null) tabs.add(2);
@@ -97,6 +98,11 @@ final class SportsView extends View implements HomeData.Listener {
                 return true;
             case KeyEvent.KEYCODE_DPAD_UP:
             case KeyEvent.KEYCODE_DPAD_DOWN:
+                if (!tabs.isEmpty() && tabs.get(tab) == 3) {
+                    int to = todayScroll + (e.getKeyCode() == KeyEvent.KEYCODE_DPAD_DOWN ? 1 : -1);
+                    todayScroll = Math.max(0, Math.min(to, todayItems - 1));
+                    invalidate();
+                }
                 return true;
             default:
                 return false;
@@ -122,7 +128,7 @@ final class SportsView extends View implements HomeData.Listener {
         // Tabs
         for (int i = 0; i < tabs.size(); i++) {
             int kind = tabs.get(i);
-            String name = kind == 0 ? a.soccer.label : kind == 1 ? a.hockey.label : Ui.tr("Formula 1");
+            String name = kind == 3 ? Ui.tr("Today") : kind == 0 ? a.soccer.label : kind == 1 ? a.hockey.label : Ui.tr("Formula 1");
             sd.text(Ui.semibold, 22, i == tab ? 0xFFFFFFFF : sd.ink(false));
             float w = sd.text.measureText(name) + 52 * k;
             r.set(tx, 58 * k, tx + w, 110 * k);
@@ -141,6 +147,7 @@ final class SportsView extends View implements HomeData.Listener {
             a.f1.roll(System.currentTimeMillis());
             drawF1(c, a.f1);
         }
+        else if (kind == 3) drawToday(c, a.today);
         else drawClub(c, kind == 0 ? a.soccer : a.hockey, kind == 0);
     }
 
@@ -163,6 +170,7 @@ final class SportsView extends View implements HomeData.Listener {
         if (a == null || tabs.isEmpty() || !(getContext() instanceof android.app.Activity)) return;
         android.app.Activity act = (android.app.Activity) getContext();
         int kind = tabs.get(tab);
+        if (kind == 3) return;   // today's list: no single game to ask about
         if (kind == 2) {
             Sports.F1 f = a.f1;
             f.roll(System.currentTimeMillis());
@@ -179,6 +187,61 @@ final class SportsView extends View implements HomeData.Listener {
         String title = m.home.name + " × " + m.away.name;
         String sub = (m.comp.isEmpty() ? "" : m.comp + " · ") + (m.state == Sports.LIVE ? Ui.tr("LIVE") : Sports.when(m.at));
         Watch.show(act, title, sub, m.tv, teams, usual(m, kind), kind == 0 ? "soccer" : "hockey");
+    }
+
+    // MARK: - Today's games
+
+    private int todayScroll, todayItems = 1;
+
+    /** Every game of today by competition (a heading, then its games by time); ↑ ↓ scroll. */
+    private void drawToday(Canvas c, List<Sports.Match> games) {
+        float left = 72 * k, right = 1848 * k, pad = 28 * k;
+        r.set(left, 150 * k, right, 1040 * k);
+        sd.panel(c, r);
+        sd.text(Ui.semibold, 18, sd.dim(false));
+        c.drawText(Ui.trf("TODAY'S GAMES · {n}", "n", games.size()).toUpperCase(Ui.locale()), r.left + pad, r.top + 42 * k, sd.text);
+        if (games.isEmpty()) {
+            sd.text(Ui.medium, 24, sd.dim(false));
+            c.drawText(Ui.tr("No games today"), r.left + pad, r.top + 110 * k, sd.text);
+            todayItems = 1;
+            return;
+        }
+        int comps = 0, last = -1;
+        for (Sports.Match m : games) if (m.order != last) { comps++; last = m.order; }
+        todayItems = games.size() + comps;
+        todayScroll = Math.min(todayScroll, todayItems - 1);
+        float cx = (left + right) / 2, y = r.top + 62 * k, bottom = r.bottom - 14 * k;
+        int item = 0;
+        last = -1;
+        for (Sports.Match m : games) {
+            if (m.order != last) {
+                last = m.order;
+                if (item++ >= todayScroll && y + 44 * k <= bottom) {
+                    sd.text(Ui.semibold, 19, sd.dim(false));
+                    c.drawText(m.comp.toUpperCase(Ui.locale()), r.left + pad, y + 32 * k, sd.text);
+                    y += 44 * k;
+                }
+            }
+            if (item++ < todayScroll) continue;
+            if (y + 62 * k > bottom) break;
+            sd.line(c, r.left + pad, y, r.right - pad);
+            float base = y + 40 * k, mid = y + 31 * k;
+            boolean live = m.state == Sports.LIVE;
+            sd.text(Ui.semibold, 21, live ? SportsDraw.LIVE_RED : m.state == Sports.FINAL ? sd.dim(false) : sd.ink(false));
+            String when = live ? (m.clock.isEmpty() ? Ui.tr("LIVE") : m.clock) : m.state == Sports.FINAL ? Ui.tr("Final") : Sports.time(m.at);
+            sd.left(c, when, r.left + pad, base, 170 * k);
+            sd.text(Ui.medium, 24, sd.ink(false));
+            sd.right(c, sd.ellipsize(m.home.name, 400 * k), cx - 110 * k, base);
+            sd.crest(c, m.home.logo, m.home.abbrev, cx - 76 * k, mid, 42 * k, false);
+            sd.text(Ui.semibold, 26, live ? SportsDraw.LIVE_RED : sd.ink(false));
+            sd.center(c, m.state == Sports.PRE ? "×" : m.homeScore + " – " + m.awayScore, cx, base, 90 * k);
+            sd.crest(c, m.away.logo, m.away.abbrev, cx + 76 * k, mid, 42 * k, false);
+            sd.text(Ui.medium, 24, sd.ink(false));
+            sd.left(c, m.away.name, cx + 110 * k, base, 400 * k);
+            y += 62 * k;
+        }
+        sd.text(Ui.medium, 18, sd.faint(false));
+        sd.right(c, Ui.tr("↑ ↓ scroll"), r.right - pad, r.top + 42 * k);
     }
 
     // MARK: - A club's tab

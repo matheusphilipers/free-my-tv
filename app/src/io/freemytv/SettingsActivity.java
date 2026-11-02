@@ -125,7 +125,7 @@ public class SettingsActivity extends Activity {
         private final SettingsActivity activity;
         private final Scene scene = new Scene();
         private final Handler handler = new Handler(Looper.getMainLooper());
-        private final Spring[] pop = new Spring[12];
+        private final Spring[] pop = new Spring[16];
         private final List<String> appPkgs = new ArrayList<>(), appLabels = new ArrayList<>();
         // The list picker (the app of a remote button): what it shows, which one is in use, where we are.
         private final List<String> pickLabels = new ArrayList<>();
@@ -135,9 +135,10 @@ public class SettingsActivity extends Activity {
         private final List<String> shelfOrder = new ArrayList<>();
         private boolean editingTop;
         private int pickFor, pickCurrent, pickScroll;   // pickFor: the remote button (index + 1)
-        private static final int PICK_CITY = 0, PICK_LANGUAGE = -1;
+        private static final int PICK_CITY = 0, PICK_LANGUAGE = -1, PICK_TEAM = -2;
         private final List<String[]> cities = new ArrayList<>();
-        private String cityStatus = "";
+        private String cityStatus = "", teamStatus = "";
+        private final List<String[]> teams = new ArrayList<>();
         private final RectF tmp = new RectF(), rowRect = new RectF(), focusBox = new RectF();
         private JSONObject state = new JSONObject(), recs = new JSONObject();
         private boolean hasKey;
@@ -253,6 +254,14 @@ public class SettingsActivity extends Activity {
             }
         }
 
+        /** Home Settings has 13 rows with a Brazilian dollar: tighter rows, so the list and its hint fit the 1080 px. */
+        private boolean tight() {
+            return screen == HOME_SETTINGS && settingLabels().length > 11;
+        }
+
+        private float listRowH() { return tight() ? 56 : LIST_ROW_H; }
+        private float listStep() { return tight() ? 62 : LIST_ROW_H + LIST_ROW_GAP; }
+
         private RectF rowBox(int row) {
             float top, height;
             if (screen == MAIN) {
@@ -262,8 +271,8 @@ public class SettingsActivity extends Activity {
                 top = LIST_TOP + 20 + row * (CHOICE_H + ROW_GAP);
                 height = CHOICE_H;
             } else {
-                top = LIST_TOP + 20 + row * (LIST_ROW_H + LIST_ROW_GAP);
-                height = LIST_ROW_H;
+                top = LIST_TOP + 20 + row * listStep();
+                height = listRowH();
             }
             focusBox.set(LIST_X * k, top * k, LIST_R * k, (top + height) * k);
             return focusBox;
@@ -612,8 +621,8 @@ public class SettingsActivity extends Activity {
                         if (e.getRepeatCount() == 0) backDown = true;
                     } else {
                         if (backDown && !e.isCanceled()) {
-                            if (screen == PICKER && (pickFor == PICK_CITY || pickFor == PICK_LANGUAGE)) {
-                                focus = pickFor == PICK_CITY ? CITY_ROW : 0;
+                            if (screen == PICKER && (pickFor == PICK_CITY || pickFor == PICK_LANGUAGE || pickFor == PICK_TEAM)) {
+                                focus = pickFor == PICK_CITY ? CITY_ROW : pickFor == PICK_TEAM ? TEAM_ROW : 0;
                                 screen = HOME_SETTINGS;
                             } else if (screen == PICKER) {
                                 focus = pickFor - 1;
@@ -637,8 +646,8 @@ public class SettingsActivity extends Activity {
         // MARK: - Home Settings and Remote Buttons
 
         private static final String[] UNITS = {"auto", "C", "F"}, THEMES = {"auto", "light", "dark"};
-        /** Home Settings: language, temperature, theme, sounds, weather, city, quotes, then one row per coin. */
-        private static final int CITY_ROW = 5, COIN_ROWS = 7;
+        /** Home Settings: language, temperature, theme, sounds, weather, city, quotes, football team, today's games, then one row per coin. */
+        private static final int CITY_ROW = 5, TEAM_ROW = 7, TODAY_ROW = 8, COIN_ROWS = 9;
 
         private boolean dollar() {
             return "BRL".equalsIgnoreCase(Config.CURRENCY.trim());
@@ -653,6 +662,8 @@ public class SettingsActivity extends Activity {
             l.add(Ui.tr("Weather widget"));
             l.add(Ui.tr("City"));
             l.add(Ui.tr("Quotes widget"));
+            l.add(Ui.tr("Football team"));
+            l.add(Ui.tr("Today's games"));
             l.add("Bitcoin");
             l.add("Ethereum");
             l.add("Solana");
@@ -673,6 +684,8 @@ public class SettingsActivity extends Activity {
             v[4] = onOff(Prefs.weather());
             v[CITY_ROW] = !cityStatus.isEmpty() ? cityStatus : Prefs.city().isEmpty() ? "—" : Prefs.city();
             v[6] = onOff(Prefs.quotes());
+            v[TEAM_ROW] = !teamStatus.isEmpty() ? teamStatus : teamName();
+            v[TODAY_ROW] = onOff(Prefs.today());
             // No quotes widget, nowhere to show prices: the coins read as off (and stay locked) until it is back on.
             for (int i = COIN_ROWS; i < v.length; i++) v[i] = onOff(Prefs.quotes() && Prefs.coin(i - COIN_ROWS));
             return v;
@@ -752,7 +765,8 @@ public class SettingsActivity extends Activity {
                 }
                 case 3: Prefs.setSounds(!Prefs.sounds()); break;
                 case 4: Prefs.setWeather(!Prefs.weather()); break;
-                case CITY_ROW: return;
+                case CITY_ROW: case TEAM_ROW: return;
+                case TODAY_ROW: Prefs.setToday(!Prefs.today()); break;
                 case 6: Prefs.setQuotes(!Prefs.quotes()); break;
                 default:
                     if (!Prefs.quotes()) return;
@@ -780,6 +794,45 @@ public class SettingsActivity extends Activity {
                 return true;
             });
             dialog.show();
+        }
+
+        /** The name shown on the Football team row. */
+        private static String teamName() {
+            String id = Sports.soccerId();
+            if (id.isEmpty()) return "—";
+            if (Prefs.soccerSet() && !Prefs.soccerName().isEmpty()) return Prefs.soccerName();
+            return Config.SPORTS_SOCCER_NAME.isEmpty() ? id : Config.SPORTS_SOCCER_NAME;
+        }
+
+        /** OK on Football team: reads Série A and B's clubs, then opens the list (the first row turns the club off). */
+        private void loadTeams() {
+            if (Ui.tr("Searching…").equals(teamStatus)) return;
+            teamStatus = Ui.tr("Searching…");
+            invalidate();
+            new Thread(() -> {
+                List<String[]> found = new ArrayList<>();
+                String error = "";
+                try {
+                    found.addAll(Sports.brazilianClubs());
+                    if (found.isEmpty()) error = Ui.tr("No clubs found.");
+                } catch (Exception e) {
+                    error = Ui.trf("Couldn't search now: {error}", "error", e.getMessage());
+                    AppLog.w("clubs: " + e.getMessage());
+                }
+                String message = error;
+                handler.post(() -> {
+                    teamStatus = message;
+                    if (!found.isEmpty() && screen == HOME_SETTINGS) {
+                        teams.clear();
+                        teams.add(new String[] {Ui.tr("None"), "", "", ""});
+                        teams.addAll(found);
+                        openPicker(PICK_TEAM);
+                        spoken.focusMoved();
+                    }
+                    invalidate();
+                    if (!message.isEmpty()) handler.postDelayed(() -> { teamStatus = ""; invalidate(); }, 4000);
+                });
+            }).start();
         }
 
         private void searchCity(String name) {
@@ -913,6 +966,12 @@ public class SettingsActivity extends Activity {
             if (which == PICK_CITY) {
                 for (String[] city : cities) pickLabels.add(city[0]);
                 pickCurrent = -1;
+            } else if (which == PICK_TEAM) {
+                pickCurrent = 0;
+                for (int i = 0; i < teams.size(); i++) {
+                    pickLabels.add(teams.get(i)[0]);
+                    if (teams.get(i)[1].equals(Sports.soccerId())) pickCurrent = i;
+                }
             } else if (which == PICK_LANGUAGE) {
                 String[] choices = languageChoices();
                 for (String code : choices) {
@@ -934,6 +993,7 @@ public class SettingsActivity extends Activity {
         private void drawPicker(Canvas c) {
             Paint heading = Ui.text(Ui.displaySemibold, 34 * k, 0xFFFFFFFF);
             String title = pickFor == PICK_CITY ? Ui.tr("City")
+                    : pickFor == PICK_TEAM ? Ui.tr("Football team")
                     : pickFor == PICK_LANGUAGE ? Ui.tr("Language") : keyLabels()[pickFor - 1];
             c.drawText(title, LIST_X * k + 30 * k, (LIST_TOP - 24) * k, heading);
             int rows = rowCount();
@@ -962,9 +1022,10 @@ public class SettingsActivity extends Activity {
             Paint heading = Ui.text(Ui.displaySemibold, 34 * k, 0xFFFFFFFF);
             c.drawText(keys ? Ui.tr("Remote Buttons") : Ui.tr("Home Settings"),
                     LIST_X * k + 30 * k, (LIST_TOP - 24) * k, heading);
+            float step = listStep(), rowH = listRowH();
             for (int i = 0; i < labels.length; i++) {
-                float y = (LIST_TOP + 20 + i * (LIST_ROW_H + LIST_ROW_GAP)) * k;
-                rowRect.set(LIST_X * k, y, LIST_R * k, y + LIST_ROW_H * k);
+                float y = (LIST_TOP + 20 + i * step) * k;
+                rowRect.set(LIST_X * k, y, LIST_R * k, y + rowH * k);
                 float f = drawRowBackground(c, i);
                 rowLabel.setColor(blend(0xF2FFFFFF, INK, f));
                 boolean locked = !keys && i >= COIN_ROWS && !Prefs.quotes();
@@ -975,7 +1036,7 @@ public class SettingsActivity extends Activity {
                 c.drawText(values[i], rowRect.right - 30 * k, base, rowValue);
             }
             Paint hint = Ui.text(Ui.regular, 23 * k, 0x8CFFFFFF);
-            float hy = (LIST_TOP + 20 + labels.length * (LIST_ROW_H + LIST_ROW_GAP) + 36) * k;
+            float hy = (LIST_TOP + 20 + labels.length * step + 36) * k;
             c.drawText(Ui.tr("OK or the arrows change the value."), LIST_X * k + 30 * k, hy, hint);
             if (keys) {
                 c.drawText(RemoteKeys.VESTEL ? Ui.tr("YouTube, Prime Video and Google Play: the TV itself controls those buttons.")
@@ -1004,6 +1065,12 @@ public class SettingsActivity extends Activity {
                 HomeData.get(c).settingsChanged();
                 focus = CITY_ROW;
                 screen = HOME_SETTINGS;
+            } else if (screen == PICKER && pickFor == PICK_TEAM) {
+                String[] team = teams.get(pickScroll + focus);
+                Prefs.setSoccer(team[1], team[3], team[2]);
+                HomeData.get(c).settingsChanged();
+                focus = TEAM_ROW;
+                screen = HOME_SETTINGS;
             } else if (screen == PICKER && pickFor == PICK_LANGUAGE) {
                 Prefs.setLanguage(languageChoices()[pickScroll + focus]);
                 focus = 0;
@@ -1023,6 +1090,9 @@ public class SettingsActivity extends Activity {
                 openPicker(PICK_LANGUAGE);
             } else if (screen == HOME_SETTINGS && focus == CITY_ROW) {
                 askCity();
+                return;
+            } else if (screen == HOME_SETTINGS && focus == TEAM_ROW) {
+                loadTeams();
                 return;
             } else if (screen == HOME_SETTINGS) {
                 adjust(1);
