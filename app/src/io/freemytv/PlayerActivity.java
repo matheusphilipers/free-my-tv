@@ -65,6 +65,9 @@ public class PlayerActivity extends Activity implements Player.Listener {
     private LinearLayout overlay, panel, tools, chanList;
     private android.widget.ScrollView chanScroll;
     private TextView title, sub, clock, left, status, caption, center, nextCard, quality, nowNext;
+    private LinearLayout nextBox;
+    private TvUi.Chip nextGo;
+    private boolean creditsDismissed;
     private Bar bar;
     private ProgressBar spinner;
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -184,13 +187,26 @@ public class PlayerActivity extends Activity implements Player.Listener {
         }
         overlay.addView(keys, ui.margins(WRAP, WRAP, 0, 14, 0, 0));
         root.addView(overlay, new FrameLayout.LayoutParams(MATCH, MATCH));
-        nextCard = ui.text("", 21, Ui.semibold, 0xFF1C1C1E);
-        nextCard.setPadding(ui.px(24), ui.px(18), ui.px(24), ui.px(18));
-        nextCard.setBackground(TvUi.round(0xF2FFFFFF, 18 * ui.k));
-        nextCard.setVisibility(View.GONE);
+        // A show's end credits: "Próximo episódio" (focused, OK plays it) and "Assistir créditos", above the time bar.
+        nextBox = ui.column();
+        nextBox.setGravity(Gravity.END);
+        nextBox.setClipChildren(false);
+        nextBox.setClipToPadding(false);
+        nextBox.setPadding(ui.px(12), ui.px(12), ui.px(12), ui.px(12));
+        nextCard = ui.text("", 19, Ui.semibold, 0xFFFFFFFF);
+        nextCard.setShadowLayer(ui.px(6), 0, ui.px(2), 0xCC000000);
+        nextBox.addView(nextCard, ui.margins(WRAP, WRAP, 0, 0, 4, 12));
+        LinearLayout nextButtons = ui.row();
+        nextButtons.setClipChildren(false);
+        TvUi.Chip credits = ui.button("Assistir créditos", false, () -> { creditsDismissed = true; hideNext(); });
+        nextGo = ui.button("▶   Próximo episódio", true, () -> { hideNext(); save(); playNext(); });
+        nextButtons.addView(credits, ui.margins(WRAP, WRAP, 0, 0, 14, 0));
+        nextButtons.addView(nextGo);
+        nextBox.addView(nextButtons);
+        nextBox.setVisibility(View.GONE);
         FrameLayout.LayoutParams np = new FrameLayout.LayoutParams(WRAP, WRAP, Gravity.END | Gravity.BOTTOM);
-        np.setMargins(0, 0, ui.px(90), ui.px(230));
-        root.addView(nextCard, np);
+        np.setMargins(0, 0, ui.px(80), ui.px(320));
+        root.addView(nextBox, np);
         // Live, OK: the channels of the category on the left; OK tunes, holding OK opens the channel's menu.
         chanScroll = new android.widget.ScrollView(this);
         chanScroll.setVerticalScrollBarEnabled(false);
@@ -374,6 +390,8 @@ public class PlayerActivity extends Activity implements Player.Listener {
         caption.setText("");
         spinner.setVisibility(View.VISIBLE);
         resumed = false;
+        creditsDismissed = false;
+        if (nextBox != null) hideNext();
         retries = 0;
         attempts = 0;
         open(url);
@@ -588,7 +606,7 @@ public class PlayerActivity extends Activity implements Player.Listener {
 
     /** Something open that takes the arrows (audio panel, tools bar, channel list, a sheet). */
     private boolean busy() {
-        return panel.getVisibility() == View.VISIBLE || inTools || chanScroll.getVisibility() == View.VISIBLE || Watch.isOpen(this);
+        return panel.getVisibility() == View.VISIBLE || nextBox.getVisibility() == View.VISIBLE || inTools || chanScroll.getVisibility() == View.VISIBLE || Watch.isOpen(this);
     }
 
     private boolean inTools, longPress;
@@ -609,6 +627,7 @@ public class PlayerActivity extends Activity implements Player.Listener {
         boolean live = channels != null;
         if (code == KeyEvent.KEYCODE_BACK) {
             if (Watch.isOpen(this)) return super.onKeyDown(code, e);
+            if (nextBox.getVisibility() == View.VISIBLE) { creditsDismissed = true; hideNext(); return true; }
             if (panel.getVisibility() == View.VISIBLE) { panel.setVisibility(View.GONE); return true; }
             if (chanScroll.getVisibility() == View.VISIBLE) { closeList(); return true; }
             if (inTools) { closeTools(); return true; }
@@ -905,16 +924,36 @@ public class PlayerActivity extends Activity implements Player.Listener {
         center.animate().scaleX(1).scaleY(1).alpha(player.isPlaying() ? 0 : 1).setStartDelay(350).setDuration(300).start();
     }
 
+    /**
+     * The end credits: there's no mark for them in an IPTV file, so they're taken as the last stretch of the episode
+     * (3.5% of it, between 40 s and 2 min; a 45 min episode: the last 1 min 35 s). Then the next episode's card shows,
+     * focused, until "Assistir créditos" or BACK; at the end, the next one plays on its own.
+     */
     private void showNext(long remaining) {
         String next = getIntent().getStringExtra("next");
-        if (next == null || next.length() < 5 || remaining > 60_000) { nextCard.setVisibility(View.GONE); return; }
+        long dur = player.getDuration();
+        long window = dur > 0 ? Math.max(40_000, Math.min(120_000, (long) (dur * 0.035))) : 60_000;
+        boolean credits = next != null && next.length() >= 5 && remaining <= window && dur > 0 && player.getCurrentPosition() > dur * 0.8;
+        if (!credits || creditsDismissed || inTools || panel.getVisibility() == View.VISIBLE) { if (!credits || creditsDismissed) hideNext(); return; }
         try {
             JSONObject n = new JSONArray(next).getJSONObject(0);
             nextCard.setText("A seguir: " + n.optString("subtitle") + "  ·  em " + Math.max(0, remaining / 1000) + " s");
-            nextCard.setVisibility(View.VISIBLE);
+            if (nextBox.getVisibility() != View.VISIBLE) {
+                nextBox.setVisibility(View.VISIBLE);
+                nextBox.setAlpha(0);
+                nextBox.animate().alpha(1).setDuration(200).start();
+                nextGo.post(nextGo::requestFocus);
+            }
         } catch (Exception e) {
-            nextCard.setVisibility(View.GONE);
+            hideNext();
         }
+    }
+
+    private void hideNext() {
+        if (nextBox.getVisibility() == View.GONE) return;
+        nextBox.setVisibility(View.GONE);
+        View f = getCurrentFocus();
+        if (f != null) f.clearFocus();
     }
 
     private final class Bar extends View {
