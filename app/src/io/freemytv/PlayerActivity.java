@@ -74,7 +74,10 @@ public class PlayerActivity extends Activity implements Player.Listener {
     private int segmentsFor;
     private Bar bar;
     private ProgressBar spinner;
-    private android.widget.ImageView loadingLogo;
+    private android.widget.ImageView loadingLogo, pauseLogo;
+    private FrameLayout pauseLayer;
+    private TextView pauseTitle, pauseSub;
+    private String logoUrl;
     private int logoFor;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private String key, url;
@@ -221,6 +224,27 @@ public class PlayerActivity extends Activity implements Player.Listener {
         FrameLayout.LayoutParams np = new FrameLayout.LayoutParams(WRAP, WRAP, Gravity.END | Gravity.BOTTOM);
         np.setMargins(0, 0, ui.px(80), ui.px(320));
         root.addView(nextBox, np);
+        // Paused a few seconds (a movie or episode): the picture darkens from the left and the title's logo shows, as
+        // on Netflix. Any key brings the controls back.
+        pauseLayer = new FrameLayout(this);
+        pauseLayer.setBackground(new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
+                new int[] {0xF2000000, 0xCC000000, 0x66000000, 0x00000000}));
+        LinearLayout pauseInfo = ui.column();
+        pauseInfo.addView(ui.text("Você está assistindo", 20, Ui.medium, 0xB3FFFFFF));
+        pauseLogo = new android.widget.ImageView(this);
+        pauseLogo.setScaleType(android.widget.ImageView.ScaleType.FIT_START);
+        pauseLogo.setAdjustViewBounds(true);
+        pauseInfo.addView(pauseLogo, ui.margins(ui.px(620), ui.px(220), 0, 16, 0, 0));
+        pauseTitle = ui.line("", 54, Ui.semibold, 0xFFFFFFFF, 2);
+        pauseInfo.addView(pauseTitle, ui.margins(ui.px(820), WRAP, 0, 12, 0, 0));
+        pauseSub = ui.line("", 24, Ui.medium, 0xD9FFFFFF, 2);
+        pauseInfo.addView(pauseSub, ui.margins(ui.px(820), WRAP, 0, 18, 0, 0));
+        pauseInfo.addView(ui.text("Pausado  ·  OK continua", 18, Ui.medium, 0x99FFFFFF), ui.margins(WRAP, WRAP, 0, 30, 0, 0));
+        FrameLayout.LayoutParams pi = new FrameLayout.LayoutParams(WRAP, WRAP, Gravity.START | Gravity.CENTER_VERTICAL);
+        pi.leftMargin = ui.px(130);
+        pauseLayer.addView(pauseInfo, pi);
+        pauseLayer.setVisibility(View.GONE);
+        root.addView(pauseLayer, new FrameLayout.LayoutParams(MATCH, MATCH));
         // "Pular abertura" / "Pular recapitulação", in the same corner, while it's on.
         skip = ui.button("", true, () -> {
             long to = inIntro() ? introB : recapB;
@@ -571,6 +595,9 @@ public class PlayerActivity extends Activity implements Player.Listener {
 
     @Override public void onIsPlayingChanged(boolean playing) {
         if (!playing) save();
+        handler.removeCallbacks(pauseShow);
+        if (playing) hidePause();
+        else if (channels == null && !player.getPlayWhenReady() && player.getPlaybackState() == Player.STATE_READY) handler.postDelayed(pauseShow, 3000);
         // Playing again (after pausing): the information goes after a moment.
         if (playing && overlay.getAlpha() > 0 && !busy()) { handler.removeCallbacks(hide); handler.postDelayed(hide, 5000); }
     }
@@ -655,6 +682,41 @@ public class PlayerActivity extends Activity implements Player.Listener {
         seekTarget = -1;
         repeat = 0;
     };
+
+    // The pause screen goes with any key; the key still does what it does (OK plays again).
+    @Override public boolean dispatchKeyEvent(KeyEvent e) {
+        if (e.getAction() == KeyEvent.ACTION_DOWN && pauseLayer.getVisibility() == View.VISIBLE) {
+            hidePause();
+            showOverlay();
+            handler.removeCallbacks(pauseShow);
+            if (!player.isPlaying()) handler.postDelayed(pauseShow, 8000);
+        }
+        return super.dispatchKeyEvent(e);
+    }
+
+    private final Runnable pauseShow = () -> {
+        if (player == null || player.isPlaying() || channels != null || busy() || isFinishing()) return;
+        Intent in = getIntent();
+        pauseTitle.setText(in.getStringExtra("title"));
+        String sub = in.getStringExtra("subtitle") == null ? "" : in.getStringExtra("subtitle");
+        // "T2:E2 · Matéria Escura" for an episode; for a movie, the year without the version ("2008 · Full HD · Dublado").
+        int dot = sub.indexOf(" · ");
+        pauseSub.setText(sub.matches("^T\\d+:E\\d+.*") ? sub.replaceFirst("^T(\\d+):E(\\d+)", "Temporada $1 · Episódio $2") : dot > 0 ? sub.substring(0, dot) : sub);
+        android.graphics.Bitmap b = logoUrl == null ? null : Img.get(logoUrl, ui.px(620));
+        pauseLogo.setImageBitmap(b);
+        pauseLogo.setVisibility(b == null ? View.GONE : View.VISIBLE);
+        pauseTitle.setVisibility(b == null ? View.VISIBLE : View.GONE);
+        overlay.animate().alpha(0).setDuration(300).start();
+        pauseLayer.setAlpha(0f);
+        pauseLayer.setVisibility(View.VISIBLE);
+        pauseLayer.animate().alpha(1).setDuration(500).start();
+    };
+
+    private void hidePause() {
+        if (pauseLayer.getVisibility() != View.VISIBLE) return;
+        pauseLayer.animate().cancel();
+        pauseLayer.setVisibility(View.GONE);
+    }
 
     @Override public boolean onKeyDown(int code, KeyEvent e) {
         boolean live = channels != null;
@@ -989,6 +1051,7 @@ public class PlayerActivity extends Activity implements Player.Listener {
     /** The title's logo from TMDB while it loads (movies and shows opened from their page; not live TV). */
     private void showLoadingLogo(Intent i) {
         final int ask = ++logoFor;
+        logoUrl = null;
         loadingLogo.setVisibility(View.GONE);
         loadingLogo.setImageBitmap(null);
         String kind = i.getStringExtra("kind");
@@ -997,6 +1060,7 @@ public class PlayerActivity extends Activity implements Player.Listener {
         Movies.get(this).run(() -> Movies.get(this).logo(kind, tmdb), path -> {
             if (path == null || path.isEmpty() || ask != logoFor || isFinishing()) return;
             String url = Img.tmdb(path, "w500");
+            logoUrl = url;   // the pause screen uses it too
             Runnable show = () -> {
                 android.graphics.Bitmap b = Img.get(url, ui.px(560));
                 if (b == null || ask != logoFor || player == null || player.getPlaybackState() == Player.STATE_READY) return;
