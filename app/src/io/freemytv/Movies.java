@@ -921,6 +921,37 @@ final class Movies {
 
     // MARK: - Network
 
+    // MARK: - Logos
+
+    private final Map<String, String> logos = new HashMap<>();
+
+    /**
+     * The title's logo (its name as artwork, a transparent PNG) from TMDB: the Portuguese one, else the English one,
+     * else one with no words; the most voted of those. "" when there's none (then the name is written).
+     */
+    String logo(String kind, int tmdb) {
+        if (tmdb <= 0) return "";
+        String k = kind + tmdb;
+        synchronized (logos) { if (logos.containsKey(k)) return logos.get(k); }
+        String best = "";
+        try {
+            JSONArray a = get("/" + ("tv".equals(kind) ? "tv" : "movie") + "/" + tmdb + "/images?include_image_language=pt,en,null").optJSONArray("logos");
+            int bestRank = -1;
+            double bestVotes = -1;
+            for (int i = 0; a != null && i < a.length(); i++) {
+                JSONObject o = a.getJSONObject(i);
+                String lang = o.optString("iso_639_1", "");
+                int rank = "pt".equals(lang) ? 3 : "en".equals(lang) ? 2 : lang.isEmpty() || "null".equals(lang) ? 1 : 0;
+                double votes = o.optDouble("vote_average", 0);
+                if (rank > bestRank || (rank == bestRank && votes > bestVotes)) { bestRank = rank; bestVotes = votes; best = o.optString("file_path", ""); }
+            }
+        } catch (Exception e) {
+            AppLog.w("logo: " + e.getMessage());
+        }
+        synchronized (logos) { logos.put(k, best); }
+        return best;
+    }
+
     // MARK: - Intro, recap and credits (IntroDB)
 
     private final Map<String, String> imdbIds = new HashMap<>();

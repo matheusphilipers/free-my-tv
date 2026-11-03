@@ -74,6 +74,8 @@ public class PlayerActivity extends Activity implements Player.Listener {
     private int segmentsFor;
     private Bar bar;
     private ProgressBar spinner;
+    private android.widget.ImageView loadingLogo;
+    private int logoFor;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private String key, url;
     private long seekTarget = -1;
@@ -126,6 +128,14 @@ public class PlayerActivity extends Activity implements Player.Listener {
         spinner = new ProgressBar(this, null, android.R.attr.progressBarStyleLarge);
         spinner.setIndeterminateTintList(android.content.res.ColorStateList.valueOf(0xFFFFFFFF));
         root.addView(spinner, new FrameLayout.LayoutParams(ui.px(90), ui.px(90), Gravity.CENTER));
+        // While a movie or episode loads: its logo on the left (as Netflix and Apple TV do), gone when it plays.
+        loadingLogo = new android.widget.ImageView(this);
+        loadingLogo.setScaleType(android.widget.ImageView.ScaleType.FIT_START);
+        loadingLogo.setAdjustViewBounds(true);
+        loadingLogo.setVisibility(View.GONE);
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(ui.px(560), ui.px(200), Gravity.START | Gravity.CENTER_VERTICAL);
+        lp.leftMargin = ui.px(150);
+        root.addView(loadingLogo, lp);
         center = ui.text("", 60, Ui.semibold, 0xFFFFFFFF);
         center.setGravity(Gravity.CENTER);
         center.setBackground(TvUi.round(0x8C000000, 70 * ui.k));
@@ -410,6 +420,7 @@ public class PlayerActivity extends Activity implements Player.Listener {
         if (nextBox != null) hideNext();
         if (skip != null) hideSkip();
         loadSegments(i);
+        showLoadingLogo(i);
         retries = 0;
         attempts = 0;
         open(url);
@@ -431,6 +442,9 @@ public class PlayerActivity extends Activity implements Player.Listener {
 
     @Override public void onPlaybackStateChanged(int state) {
         spinner.setVisibility(state == Player.STATE_BUFFERING ? View.VISIBLE : View.GONE);
+        if (state == Player.STATE_READY && loadingLogo.getVisibility() == View.VISIBLE) {
+            loadingLogo.animate().alpha(0).setDuration(300).withEndAction(() -> loadingLogo.setVisibility(View.GONE)).start();
+        }
         if (state == Player.STATE_READY) {
             status.setText("");
             if (!resumed && channels != null) {
@@ -970,6 +984,32 @@ public class PlayerActivity extends Activity implements Player.Listener {
         } catch (Exception e) {
             hideNext();
         }
+    }
+
+    /** The title's logo from TMDB while it loads (movies and shows opened from their page; not live TV). */
+    private void showLoadingLogo(Intent i) {
+        final int ask = ++logoFor;
+        loadingLogo.setVisibility(View.GONE);
+        loadingLogo.setImageBitmap(null);
+        String kind = i.getStringExtra("kind");
+        int tmdb = i.getIntExtra("tmdb", 0);
+        if (channels != null || tmdb <= 0 || kind == null) return;
+        Movies.get(this).run(() -> Movies.get(this).logo(kind, tmdb), path -> {
+            if (path == null || path.isEmpty() || ask != logoFor || isFinishing()) return;
+            String url = Img.tmdb(path, "w500");
+            Runnable show = () -> {
+                android.graphics.Bitmap b = Img.get(url, ui.px(560));
+                if (b == null || ask != logoFor || player == null || player.getPlaybackState() == Player.STATE_READY) return;
+                loadingLogo.setImageBitmap(b);
+                loadingLogo.setAlpha(0f);
+                loadingLogo.setVisibility(View.VISIBLE);
+                loadingLogo.animate().alpha(1).setDuration(250).start();
+            };
+            if (Img.get(url, ui.px(560)) != null) { show.run(); return; }
+            Img.Listener[] wait = new Img.Listener[1];
+            wait[0] = () -> { if (Img.get(url, ui.px(560)) != null) { Img.removeListener(wait[0]); show.run(); } };
+            Img.addListener(wait[0]);
+        });
     }
 
     private static final java.util.regex.Pattern EPISODE = java.util.regex.Pattern.compile("T(\\d+):E(\\d+)");

@@ -1,5 +1,7 @@
 package io.freemytv;
 
+import android.graphics.Bitmap;
+
 import android.app.Activity;
 import android.graphics.Outline;
 import android.graphics.drawable.GradientDrawable;
@@ -96,7 +98,30 @@ public class MovieActivity extends Activity {
 
         LinearLayout info = ui.column();
         info.addView(ui.text(t.kindLabel().toUpperCase() + (t.year.isEmpty() ? "" : " · " + t.year), 19, Ui.semibold, TvUi.ACCENT));
-        info.addView(ui.line(t.name, 62, Ui.semibold, 0xFFFFFFFF, 2), ui.margins(MATCH, WRAP, 0, 12, 0, 0));
+        // The title's logo when TMDB has one (as Netflix and Apple TV show it), else its name.
+        TextView name = ui.line(t.name, 62, Ui.semibold, 0xFFFFFFFF, 2);
+        info.addView(name, ui.margins(MATCH, WRAP, 0, 12, 0, 0));
+        ImageView logo = new ImageView(this);
+        logo.setScaleType(ImageView.ScaleType.FIT_START);
+        logo.setAdjustViewBounds(true);
+        logo.setContentDescription(t.name);
+        logo.setVisibility(View.GONE);
+        info.addView(logo, 2, ui.margins(ui.px(620), ui.px(170), 0, 16, 0, 4));
+        movies.run(() -> movies.logo(t.kind, t.id), path -> {
+            if (path == null || path.isEmpty() || isFinishing()) return;
+            String url = Img.tmdb(path, "w500");
+            Bitmap ready = Img.get(url, ui.px(620));
+            if (ready != null) { showLogo(logo, name, ready); return; }
+            // Shown once it has arrived (the name stays until then).
+            Img.Listener[] wait = new Img.Listener[1];
+            wait[0] = () -> {
+                Bitmap b = Img.get(url, ui.px(620));
+                if (b == null) return;
+                Img.removeListener(wait[0]);
+                if (!isFinishing()) showLogo(logo, name, b);
+            };
+            Img.addListener(wait[0]);
+        });
         StringBuilder meta = new StringBuilder();
         for (int i = 0; i < d.genreNames.size() && i < 3; i++) meta.append(i == 0 ? "" : ", ").append(d.genreNames.get(i));
         if (!d.runtime.isEmpty()) meta.append(meta.length() == 0 ? "" : " · ").append(d.runtime);
@@ -439,6 +464,12 @@ public class MovieActivity extends Activity {
             photo.animate().scaleX(f ? 1.08f : 1f).scaleY(f ? 1.08f : 1f).setDuration(140).start();
         });
         return box;
+    }
+
+    private static void showLogo(ImageView logo, TextView name, Bitmap b) {
+        if (b != null) logo.setImageBitmap(b);
+        logo.setVisibility(View.VISIBLE);
+        name.setVisibility(View.GONE);
     }
 
     private View review(Movies.Review r) {
