@@ -921,6 +921,62 @@ final class Movies {
 
     // MARK: - Network
 
+    // MARK: - Intro, recap and credits (IntroDB)
+
+    private final Map<String, String> imdbIds = new HashMap<>();
+    private final Map<String, JSONObject> segmentsCache = new HashMap<>();
+
+    /** A title's IMDb number ("tt0903747"), which IntroDB goes by; from TMDB, kept for the session. */
+    String imdbId(String kind, int tmdb) {
+        String k = kind + tmdb;
+        synchronized (imdbIds) { if (imdbIds.containsKey(k)) return imdbIds.get(k); }
+        String id = "";
+        try { id = get("/" + ("tv".equals(kind) ? "tv" : "movie") + "/" + tmdb + "/external_ids").optString("imdb_id", ""); } catch (Exception e) {
+            AppLog.w("imdb id: " + e.getMessage());
+        }
+        synchronized (imdbIds) { imdbIds.put(k, id); }
+        return id;
+    }
+
+    /**
+     * Where an episode's (or a movie's) intro, recap and end credits are, as people marked them on IntroDB
+     * (introdb.app, free, no key): {"intro": {"start_sec", "end_sec"}, "recap": …, "outro": …, "no_intro": …}. Null
+     * when it isn't known. The same marks Netflix's "Pular abertura" and "Próximo episódio" go by.
+     */
+    JSONObject segments(String kind, int tmdb, int season, int episode) {
+        if (tmdb <= 0) return null;
+        String key = kind + tmdb + ":" + season + ":" + episode;
+        synchronized (segmentsCache) { if (segmentsCache.containsKey(key)) return segmentsCache.get(key); }
+        JSONObject out = null;
+        String imdb = imdbId(kind, tmdb);
+        if (!imdb.isEmpty()) {
+            String url = "https://api.introdb.app/segments?imdb_id=" + imdb
+                    + ("tv".equals(kind) ? "&season=" + season + "&episode=" + episode : "&is_movie=true");
+            HttpURLConnection c = null;
+            try {
+                c = (HttpURLConnection) new URL(url).openConnection();
+                c.setConnectTimeout(6000);
+                c.setReadTimeout(8000);
+                c.setRequestProperty("User-Agent", "FreeMyTV (Android TV)");
+                if (c.getResponseCode() == 200) {
+                    ByteArrayOutputStream b = new ByteArrayOutputStream();
+                    try (InputStream in = c.getInputStream()) {
+                        byte[] buf = new byte[4096];
+                        int n;
+                        while ((n = in.read(buf)) > 0 && b.size() < 64_000) b.write(buf, 0, n);
+                    }
+                    out = new JSONObject(b.toString(StandardCharsets.UTF_8.name()));
+                }
+            } catch (Exception e) {
+                AppLog.w("introdb: " + e.getMessage());
+            } finally {
+                if (c != null) c.disconnect();
+            }
+        }
+        synchronized (segmentsCache) { segmentsCache.put(key, out); }
+        return out;
+    }
+
     private JSONObject get(String path) throws IOException, org.json.JSONException {
         String key = Lite.tmdbKey().trim();
         if (key.isEmpty()) throw new IOException("no TMDB key");

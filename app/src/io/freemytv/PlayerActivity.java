@@ -66,8 +66,12 @@ public class PlayerActivity extends Activity implements Player.Listener {
     private android.widget.ScrollView chanScroll;
     private TextView title, sub, clock, left, status, caption, center, nextCard, quality, nowNext;
     private LinearLayout nextBox;
-    private TvUi.Chip nextGo;
-    private boolean creditsDismissed;
+    private TvUi.Chip nextGo, skip;
+    private boolean creditsDismissed, skipDismissed;
+    // From IntroDB (ms; -1 unknown): the intro, the recap, where the end credits start. noOutro: marked as having none.
+    private long introA = -1, introB = -1, recapA = -1, recapB = -1, outroA = -1;
+    private boolean noOutro;
+    private int segmentsFor;
     private Bar bar;
     private ProgressBar spinner;
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -207,6 +211,17 @@ public class PlayerActivity extends Activity implements Player.Listener {
         FrameLayout.LayoutParams np = new FrameLayout.LayoutParams(WRAP, WRAP, Gravity.END | Gravity.BOTTOM);
         np.setMargins(0, 0, ui.px(80), ui.px(320));
         root.addView(nextBox, np);
+        // "Pular abertura" / "Pular recapitulação", in the same corner, while it's on.
+        skip = ui.button("", true, () -> {
+            long to = inIntro() ? introB : recapB;
+            skipDismissed = false;
+            hideSkip();
+            if (to > 0) player.seekTo(to);
+        });
+        skip.setVisibility(View.GONE);
+        FrameLayout.LayoutParams sp = new FrameLayout.LayoutParams(WRAP, WRAP, Gravity.END | Gravity.BOTTOM);
+        sp.setMargins(0, 0, ui.px(92), ui.px(332));
+        root.addView(skip, sp);
         // Live, OK: the channels of the category on the left; OK tunes, holding OK opens the channel's menu.
         chanScroll = new android.widget.ScrollView(this);
         chanScroll.setVerticalScrollBarEnabled(false);
@@ -391,7 +406,10 @@ public class PlayerActivity extends Activity implements Player.Listener {
         spinner.setVisibility(View.VISIBLE);
         resumed = false;
         creditsDismissed = false;
+        skipDismissed = false;
         if (nextBox != null) hideNext();
+        if (skip != null) hideSkip();
+        loadSegments(i);
         retries = 0;
         attempts = 0;
         open(url);
@@ -569,6 +587,7 @@ public class PlayerActivity extends Activity implements Player.Listener {
                     clock.setText(time(pos));
                     left.setText("−" + time(dur - pos));
                     showNext(dur - pos);
+                    showSkip();
                     if (seekTarget < 0 && player.isPlaying() && System.currentTimeMillis() % 10_000 < 500) save();
                 } else {
                     bar.set(1, 1, null);
@@ -606,7 +625,7 @@ public class PlayerActivity extends Activity implements Player.Listener {
 
     /** Something open that takes the arrows (audio panel, tools bar, channel list, a sheet). */
     private boolean busy() {
-        return panel.getVisibility() == View.VISIBLE || nextBox.getVisibility() == View.VISIBLE || inTools || chanScroll.getVisibility() == View.VISIBLE || Watch.isOpen(this);
+        return panel.getVisibility() == View.VISIBLE || nextBox.getVisibility() == View.VISIBLE || skip.getVisibility() == View.VISIBLE || inTools || chanScroll.getVisibility() == View.VISIBLE || Watch.isOpen(this);
     }
 
     private boolean inTools, longPress;
@@ -628,6 +647,7 @@ public class PlayerActivity extends Activity implements Player.Listener {
         if (code == KeyEvent.KEYCODE_BACK) {
             if (Watch.isOpen(this)) return super.onKeyDown(code, e);
             if (nextBox.getVisibility() == View.VISIBLE) { creditsDismissed = true; hideNext(); return true; }
+            if (skip.getVisibility() == View.VISIBLE) { skipDismissed = true; hideSkip(); return true; }
             if (panel.getVisibility() == View.VISIBLE) { panel.setVisibility(View.GONE); return true; }
             if (chanScroll.getVisibility() == View.VISIBLE) { closeList(); return true; }
             if (inTools) { closeTools(); return true; }
@@ -933,7 +953,10 @@ public class PlayerActivity extends Activity implements Player.Listener {
         String next = getIntent().getStringExtra("next");
         long dur = player.getDuration();
         long window = dur > 0 ? Math.max(40_000, Math.min(120_000, (long) (dur * 0.035))) : 60_000;
-        boolean credits = next != null && next.length() >= 5 && remaining <= window && dur > 0 && player.getCurrentPosition() > dur * 0.8;
+        long pos = player.getCurrentPosition();
+        // The marked start of the credits when IntroDB has it (as Netflix does), else the last stretch.
+        boolean inCredits = outroA > 0 ? pos >= outroA : !noOutro && remaining <= window && pos > dur * 0.8;
+        boolean credits = next != null && next.length() >= 5 && dur > 0 && inCredits;
         if (!credits || creditsDismissed || inTools || panel.getVisibility() == View.VISIBLE) { if (!credits || creditsDismissed) hideNext(); return; }
         try {
             JSONObject n = new JSONArray(next).getJSONObject(0);
@@ -947,6 +970,74 @@ public class PlayerActivity extends Activity implements Player.Listener {
         } catch (Exception e) {
             hideNext();
         }
+    }
+
+    private static final java.util.regex.Pattern EPISODE = java.util.regex.Pattern.compile("T(\\d+):E(\\d+)");
+
+    /** Asks IntroDB where this episode's (or movie's) intro, recap and credits are. */
+    private void loadSegments(Intent i) {
+        introA = introB = recapA = recapB = outroA = -1;
+        noOutro = false;
+        final int ask = ++segmentsFor;
+        String kind = i.getStringExtra("kind");
+        int tmdb = i.getIntExtra("tmdb", getIntent().getIntExtra("tmdb", 0));
+        if (channels != null || tmdb <= 0 || kind == null) return;
+        int season = 0, episode = 0;
+        if ("tv".equals(kind)) {
+            java.util.regex.Matcher m = EPISODE.matcher(String.valueOf(i.getStringExtra("subtitle")));
+            if (!m.find()) return;
+            season = Integer.parseInt(m.group(1));
+            episode = Integer.parseInt(m.group(2));
+        }
+        final String k = kind;
+        final int se = season, ep = episode;
+        Movies.get(this).run(() -> Movies.get(this).segments(k, tmdb, se, ep), o -> {
+            if (o == null || ask != segmentsFor || isFinishing()) return;
+            long[] in = range(o.optJSONObject("intro")), re = range(o.optJSONObject("recap")), out = range(o.optJSONObject("outro"));
+            introA = in[0]; introB = in[1]; recapA = re[0]; recapB = re[1]; outroA = out[0];
+            noOutro = o.optBoolean("no_outro", false);
+            AppLog.w("introdb: intro " + introA + "-" + introB + " recap " + recapA + "-" + recapB + " credits " + outroA);
+        });
+    }
+
+    private static long[] range(JSONObject seg) {
+        if (seg == null) return new long[] {-1, -1};
+        long a = seg.has("start_ms") ? seg.optLong("start_ms", -1) : (long) (seg.optDouble("start_sec", -1) * 1000);
+        long b = seg.has("end_ms") ? seg.optLong("end_ms", -1) : (long) (seg.optDouble("end_sec", -1) * 1000);
+        return b > a && a >= 0 ? new long[] {a, b} : new long[] {-1, -1};
+    }
+
+    private boolean inIntro() {
+        long p = player.getCurrentPosition();
+        return introB > 0 && p >= introA && p < introB - 1500;
+    }
+
+    private boolean inRecap() {
+        long p = player.getCurrentPosition();
+        return recapB > 0 && p >= recapA && p < recapB - 1500;
+    }
+
+    /** "Pular abertura" while the intro is on (and "Pular recapitulação" in the recap), focused: OK jumps past it. */
+    private void showSkip() {
+        boolean intro = inIntro(), recap = !intro && inRecap();
+        if (!(intro || recap) || skipDismissed || inTools || panel.getVisibility() == View.VISIBLE || nextBox.getVisibility() == View.VISIBLE) {
+            if (!(intro || recap)) { skipDismissed = false; hideSkip(); }
+            return;
+        }
+        skip.setText(intro ? "Pular abertura  ▶▶" : "Pular recapitulação  ▶▶");
+        if (skip.getVisibility() != View.VISIBLE) {
+            skip.setVisibility(View.VISIBLE);
+            skip.setAlpha(0);
+            skip.animate().alpha(1).setDuration(200).start();
+            skip.post(skip::requestFocus);
+        }
+    }
+
+    private void hideSkip() {
+        if (skip.getVisibility() == View.GONE) return;
+        skip.setVisibility(View.GONE);
+        View f = getCurrentFocus();
+        if (f != null) f.clearFocus();
     }
 
     private void hideNext() {
