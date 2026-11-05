@@ -134,11 +134,16 @@
 
   // MARK: - Focus
 
-  var Z = {TOP: 'top', CARDS: 'cards', SHELF: 'shelf', DRAWER: 'drawer', APPS: 'apps', SETTINGS: 'settings', EDIT: 'edit', LANG: 'lang'};
-  var st = {zone: Z.SHELF, top: 0, tab: 0, card: 0, shelf: 0, drawer: 0, grid: 0, row: 0, edit: 0, lang: 0};
+  var Z = {TOP: 'top', CARDS: 'cards', SHELF: 'shelf', DRAWER: 'drawer', APPS: 'apps', SETTINGS: 'settings', EDIT: 'edit', LANG: 'lang',
+    SPORTS: 'sports', TEAM: 'team'};
+  var st = {zone: Z.SHELF, top: 0, tab: 0, card: 0, shelf: 0, drawer: 0, grid: 0, row: 0, edit: 0, lang: 0, sport: 0, team: 0};
   var cards = [];
 
-  function sheetOpen() { return st.zone === Z.APPS || st.zone === Z.SETTINGS || st.zone === Z.EDIT || st.zone === Z.LANG; }
+  function sheetZone(zone) {
+    return zone === Z.APPS || zone === Z.SETTINGS || zone === Z.EDIT || zone === Z.LANG || zone === Z.SPORTS || zone === Z.TEAM;
+  }
+
+  function sheetOpen() { return sheetZone(st.zone); }
 
   function updateFocus() {
     var i, list;
@@ -163,6 +168,10 @@
     focusRows($('settings'), st.row, st.zone === Z.SETTINGS);
     focusRows($('shelfedit'), st.edit, st.zone === Z.EDIT);
     focusRows($('langpick'), st.lang, st.zone === Z.LANG);
+    focusRows($('sports'), st.sport, st.zone === Z.SPORTS);
+    focusRows($('teampick'), st.team, st.zone === Z.TEAM);
+    if (sportsHint) sportsHint.textContent = (st.sport + 1) + ' / ' + sportRows.length;
+    if (teamHint) teamHint.textContent = teamChoices.length ? (st.team + 1) + ' / ' + teamChoices.length + '  ·  ' + tr('OK picks, Back cancels.') : '';
     if (langHint) langHint.textContent = (st.lang + 1) + ' / ' + languageChoices().length + '  ·  ' + tr('OK picks, Back cancels.');
     setClass(body, 'drawer-open', st.zone === Z.DRAWER);
   }
@@ -325,6 +334,7 @@
       drawerItems.push({label: x.label || tr('Live TV'), symbol: x.symbol, off: !x.connected, run: launcher(x.id, x.label)});
     }
     drawerInputs = drawerItems.length;
+    if (Sports.on()) drawerItems.push({label: tr('Sports'), symbol: 'live_tv', run: openSports});
     drawerItems.push({label: tr('All Apps'), symbol: 'apps', run: openApps});
     drawerItems.push({label: tr('Home Settings'), symbol: 'settings', run: openSettings});
     drawerItems.push({label: tr('TV Settings'), symbol: 'tv_settings', run: tvSettings});
@@ -459,7 +469,9 @@
     setClass($('settings'), 'open', false);
     setClass($('shelfedit'), 'open', false);
     setClass($('langpick'), 'open', false);
-    langHint = null;
+    setClass($('sports'), 'open', false);
+    setClass($('teampick'), 'open', false);
+    langHint = sportsHint = teamHint = null;
     st.zone = Z.SHELF;
     updateFocus();
   }
@@ -479,7 +491,11 @@
       {label: tr('Weather widget'), toggle: Prefs.weather(),
         step: function () { Prefs.set('weather', !Prefs.weather()); renderPanels(); }},
       {label: tr('Quotes widget'), toggle: Prefs.quotes(),
-        step: function () { Prefs.set('quotes', !Prefs.quotes()); Data.settingsChanged(); }}
+        step: function () { Prefs.set('quotes', !Prefs.quotes()); Data.settingsChanged(); }},
+      {label: tr('Football team'), value: teamName(), opens: true,
+        step: function (d) { if (d >= 0) openTeams(Z.SETTINGS); }},
+      {label: tr("Today's games"), toggle: Prefs.today(),
+        step: function () { Prefs.set('today', !Prefs.today()); Sports.changed(); renderDrawer(); }}
     ];
     var names = ['Bitcoin', 'Ethereum', 'Solana', tr('Dollar')];
     var count = Data.currency === 'BRL' ? 4 : 3;
@@ -584,6 +600,146 @@
     openSettings();
     for (var i = 0; i < rowsNow.length; i++) if (rowsNow[i].language) st.row = i;
     updateFocus();
+  }
+
+  // MARK: - Sports: today's games and the next games of your club (the Android app's Sports screen, as one list)
+
+  var sportsHint = null, sportRows = [];
+
+  function teamName() {
+    var t = Prefs.soccer();
+    return t && t.id ? t.name : '—';
+  }
+
+  /** "Today", "Tomorrow" or "Thu 5/11", then the time. */
+  function whenText(at) {
+    var d = new Date(at), now = new Date(), start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    var days = Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() - start) / 86400000);
+    var day = days === 0 ? tr('Today') : days === 1 ? tr('Tomorrow') : formatDate('format|EEE', at) + ' ' + d.getDate() + '/' + (d.getMonth() + 1);
+    return day + ' · ' + Data.time(at);
+  }
+
+  function gameRow(m, withDay) {
+    var live = m.state === Sports.LIVE, played = m.state !== Sports.PRE;
+    return {
+      game: true, live: live,
+      when: live ? (m.half ? tr('Half-time') : m.clock || tr('LIVE')) : m.state === Sports.FINAL ? tr('Final') : withDay ? whenText(m.at) : Data.time(m.at),
+      teams: played ? m.home.name + ' ' + m.homeScore + ' – ' + m.awayScore + ' ' + m.away.name : m.home.name + ' × ' + m.away.name,
+      comp: m.comp
+    };
+  }
+
+  function buildSportRows() {
+    var rows = [{label: tr('Football team'), value: teamName(), opens: true, step: function (d) { if (d >= 0) openTeams(Z.SPORTS); }}];
+    var mine = Sports.next(), i;
+    for (i = 0; i < mine.length; i++) rows.push(gameRow(mine[i], true));
+    if (Prefs.today()) {
+      var list = Sports.games();
+      if (!list.length) rows.push({label: Sports.loading() ? tr('Loading games…') : tr('No games today'), dim: true});
+      for (i = 0; i < list.length; i++) rows.push(gameRow(list[i], false));
+    } else if (!mine.length) {
+      rows.push({label: tr('No games scheduled'), dim: true});
+    }
+    return rows;
+  }
+
+  function renderSports() {
+    var box = $('sports').firstChild;
+    box.innerHTML = '';
+    var title = el('div', 'title', box);
+    sym('live_tv', title);
+    title.appendChild(document.createTextNode(Prefs.today() ? tr("Today's games") : tr('Sports')));
+    var list = el('div', 'list', box), holder = el('div', 'rows', list);
+    sportRows = buildSportRows();
+    list.style.height = Math.min(sportRows.length, 7) * 78 + 'px';
+    for (var i = 0; i < sportRows.length; i++) {
+      var r = sportRows[i], row = el('div', 'row' + (r.dim ? ' dim' : '') + (r.game ? ' game' : ''), holder);
+      if (r.game) {
+        el('span', 'when' + (r.live ? ' live' : ''), row, r.when);
+        el('span', 'teams', row, r.teams);
+        el('span', 'value', row, r.comp);
+      } else {
+        row.appendChild(document.createTextNode(r.label));
+        if (r.opens) { var v = el('span', 'value', row); v.appendChild(document.createTextNode(r.value)); el('span', 'chev', v, '›'); }
+      }
+      hover(row, Z.SPORTS, i);
+    }
+    sportsHint = el('div', 'hint', box);
+    st.sport = Math.min(st.sport, sportRows.length - 1);
+    updateFocus();
+  }
+
+  function openSports() {
+    st.zone = Z.SPORTS;
+    st.sport = 0;
+    renderSports();
+    setClass($('sports'), 'open', true);
+    Sports.refresh(function () { if (st.zone === Z.SPORTS) renderSports(); });
+    updateFocus();
+  }
+
+  // MARK: - Football team: Série A and B, read from ESPN when the list opens
+
+  var teamHint = null, teamChoices = [], teamFrom = Z.SETTINGS, teamText = '';
+
+  function renderTeams() {
+    var box = $('teampick').firstChild, current = Prefs.soccer();
+    box.innerHTML = '';
+    el('div', 'title', box, tr('Football team'));
+    var list = el('div', 'list', box), holder = el('div', 'rows', list);
+    var n = teamChoices.length || 1;
+    list.style.height = Math.min(n, 7) * 78 + 'px';
+    if (!teamChoices.length) {
+      el('div', 'row dim', holder, teamText || tr('Searching…'));
+    }
+    for (var i = 0; i < teamChoices.length; i++) {
+      var row = el('div', 'row', holder, teamChoices[i].label);
+      if (current && current.id === teamChoices[i].id) sym('check', el('span', 'value', row));
+      else if (!current && !teamChoices[i].id) sym('check', el('span', 'value', row));
+      hover(row, Z.TEAM, i);
+    }
+    teamHint = el('div', 'hint', box);
+    updateFocus();
+  }
+
+  function openTeams(from) {
+    teamFrom = from;
+    setClass($(from === Z.SPORTS ? 'sports' : 'settings'), 'open', false);
+    st.zone = Z.TEAM;
+    teamChoices = [];
+    teamText = '';
+    st.team = 0;
+    renderTeams();
+    setClass($('teampick'), 'open', true);
+    Sports.clubs(function (err, list) {
+      if (st.zone !== Z.TEAM) return;
+      if (err) { teamText = trf("Couldn't search now: {error}", {error: err.message}); renderTeams(); return; }
+      teamChoices = [{label: tr('None'), id: '', name: '', league: ''}].concat(list);
+      var cur = Prefs.soccer();
+      st.team = 0;
+      for (var i = 0; cur && i < teamChoices.length; i++) if (teamChoices[i].id === cur.id) st.team = i;
+      renderTeams();
+    });
+    updateFocus();
+  }
+
+  /** OK picks the club under the focus, Back keeps the old one; either way, back to where the list was opened from. */
+  function closeTeams(pick) {
+    setClass($('teampick'), 'open', false);
+    teamHint = null;
+    var c = teamChoices[st.team];
+    if (pick && c) {
+      Prefs.set('soccer', c.id ? {id: c.id, name: c.name, league: c.league} : null);
+      Sports.changed();
+      renderDrawer();
+    }
+    if (teamFrom === Z.SPORTS) {
+      openSports();
+    } else {
+      openSettings();
+      for (var i = 0; i < rowsNow.length; i++) if (rowsNow[i].label === tr('Football team')) st.row = i;
+      updateFocus();
+    }
   }
 
   // MARK: - Shelf editor: which apps, in what order
@@ -696,6 +852,12 @@
       case Z.LANG:
         closeLanguages(true);
         return;
+      case Z.SPORTS:
+        if (sportRows[st.sport] && sportRows[st.sport].step) { sportRows[st.sport].step(1); }
+        return;
+      case Z.TEAM:
+        closeTeams(true);
+        return;
     }
   }
 
@@ -752,6 +914,12 @@
       case Z.LANG:
         if (dy) st.lang = Math.max(0, Math.min(languageChoices().length - 1, st.lang + dy));
         break;
+      case Z.SPORTS:
+        if (dy) st.sport = Math.max(0, Math.min(sportRows.length - 1, st.sport + dy));
+        break;
+      case Z.TEAM:
+        if (dy) st.team = Math.max(0, Math.min(teamChoices.length - 1, st.team + dy));
+        break;
     }
     updateFocus();
   }
@@ -759,6 +927,7 @@
   function back() {
     if (st.zone === Z.EDIT) { setClass($('shelfedit'), 'open', false); openSettings(); st.row = rowsNow.length - 2; updateFocus(); return; }
     if (st.zone === Z.LANG) { closeLanguages(false); return; }
+    if (st.zone === Z.TEAM) { closeTeams(false); return; }
     if (sheetOpen()) { closeSheets(); return; }
     if (st.zone === Z.DRAWER) { closeDrawer(); return; }
     if (st.zone !== Z.SHELF && shelf.length) { st.zone = Z.SHELF; updateFocus(); return; }
@@ -768,7 +937,7 @@
   /** The pointer focuses what it's over (the Magic Remote, or a mouse when previewing). */
   function hover(node, zone, index) {
     node.onmouseover = function () {
-      if (saverOn || (sheetOpen() !== (zone === Z.APPS || zone === Z.SETTINGS || zone === Z.EDIT || zone === Z.LANG))) return;
+      if (saverOn || (sheetOpen() !== sheetZone(zone))) return;
       if (zone === Z.DRAWER && st.zone !== Z.DRAWER) return;
       if (zone !== Z.DRAWER && st.zone === Z.DRAWER && zone !== Z.SHELF) return;
       if (zone === Z.SHELF && st.zone === Z.DRAWER) closeDrawer();
@@ -781,6 +950,8 @@
       else if (zone === Z.SETTINGS) st.row = index;
       else if (zone === Z.EDIT) st.edit = index;
       else if (zone === Z.LANG) st.lang = index;
+      else if (zone === Z.SPORTS) st.sport = index;
+      else if (zone === Z.TEAM) st.team = index;
       updateFocus();
     };
     node.onclick = function () { node.onmouseover(); activate(); };
@@ -954,6 +1125,7 @@
     Data.refresh();
     if (!saverOn && !sheetOpen() && Date.now() - idleAt > SAVER_AFTER) showSaver();
     if (saverOn) tickSaverClock($('saver').querySelector('.clock'));
+    if (st.zone === Z.SPORTS) Sports.refresh(function () { if (st.zone === Z.SPORTS) renderSports(); });
   }, 30000);
 
   // For the browser preview and tests.

@@ -273,6 +273,12 @@ HDMI (Chromecast with Google TV, Google TV Streamer, onn 4K, NVIDIA Shield). Set
   `formatDate('format|h:mm a', at)` (the catalogue's SimpleDateFormat pattern, written by `web/strings.js`), and
   `tools/translate.py` reads those calls too. Built without a city (`--generic`), `web/zones.js`
   (`tools/make_zones.py`, from the tz database) turns the TV's time zone into the city, the currency and the region.
+  Sports on the web (`web/sports.js`, the Sports sheet and Football team picker in `home.js`): today's games and your
+  club's next games, from ESPN, read only while the sheet is open (cached in localStorage). The drawer's *Sports*
+  shortcut shows when `Prefs.today()` (default on) or a club is picked; *Football team* and *Today's games* are Home
+  Settings rows. ESPN's `teams` answers without CORS headers, so the clubs come from `standings`; and Akamai answers
+  403 to a browser that sends `sec-ch-ua: "HeadlessChrome"` (a headless test needs another identity, with
+  `Emulation.setUserAgentOverride`). There is no Assistir, IPTV, search, tab pill or screensaver choice on the web.
   `tools/webapp.py` is what both builds share. Preview: `python3 webos/build.py --preview` (or `tizen/build.py`), then
   open `out/webos/index.html` in a browser (a stand-in lists sample apps).
 

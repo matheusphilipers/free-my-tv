@@ -50,6 +50,9 @@ var Prefs = (function () {
     quotes: function () { return pick('quotes', CONFIG.showCrypto !== false); },
     coin: function (i) { var c = pick('coins', null); return c ? c[i] !== false : true; },
     shelf: function () { return pick('shelf', null); },
+    /** Today's games in Sports (on unless turned off), and the football club picked on the TV: {id, name, league} or null. */
+    today: function () { return pick('today', true); },
+    soccer: function () { return pick('soccer', null); },
     set: function (name, value) { v[name] = value; save(); this.version++; },
     setCoin: function (i, on) {
       var c = (pick('coins', null) || [true, true, true, true]).slice();
