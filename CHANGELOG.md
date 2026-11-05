@@ -4,6 +4,37 @@ Tudo o que mudou no Free My TV, da versão mais nova para a mais antiga. O que e
 `<versão> (<código do commit>)`, por exemplo `1.2 (ab12cd3)`; os pacotes da LG e da Samsung têm a versão própria
 (`1.1.0`), que só muda quando o `web/` muda.
 
+## 1.3 (2026-11-04)
+
+### Adicionado
+
+- **Menu igual em todas as telas.** A pílula de abas passou a ter a mesma lista, na mesma ordem, na tela inicial e no
+  *Assistir*: **Início · Para você · Descobrir · Filmes · Séries · Ao vivo · Buscar · Ajustes** (no modo leve, sem *Para
+  você* e *Descobrir*). Antes a home mostrava 6 abas e o Assistir 8, e o menu mudava ao navegar.
+- **Botões do topo também no Assistir.** TV aberta, Entradas HDMI e Configurações aparecem no canto direito do
+  *Assistir*, um passo à direita da última aba. Antes só dava para chegar neles passando rápido pela pílula da tela
+  inicial. O de HDMI volta para a tela inicial e abre a lista de entradas.
+- **Buscar com exemplos.** Sem texto digitado, a tela mostra botões de exemplo ("filmes de suspense", "séries de
+  terror", "Duna"...) que fazem a busca com o OK, no lugar do parágrafo de dicas.
+- **Player estilo Netflix:** "Pular abertura", "Pular recapitulação" e "Próximo episódio" nos tempos marcados no
+  IntroDB, o logo oficial do filme ou série enquanto carrega, e a tela de pausa com gradiente escuro.
+
+### Alterado
+
+- **Aba atual marcada.** A aba onde você está fica com um fundo suave quando o foco está em outro lugar (os botões do
+  topo, o conteúdo), e o foco continua sendo o pill branco.
+- **Buscar usa a largura toda.** O campo ocupa a tela e o microfone fica na ponta direita, alinhado aos botões do topo,
+  com a mesma altura. Descendo da aba *Buscar*, o foco cai no campo.
+- **Abas mais compactas** (espaçamento interno menor) para as 8 caberem sem encostar nos botões do canto.
+
+### Corrigido
+
+- **Conteúdo trocado.** Passando rápido pelas abas e voltando ao Início, o *Assistir* podia ficar com a aba marcada
+  "Para você" e o conteúdo de "Ao vivo". Agora ele sabe qual aba foi montada de fato e refaz se faltar.
+- **Clarão claro ao abrir o Assistir à noite.** A janela de partida do Android usava o cinza-claro do tema antes de a
+  tela escura desenhar; no *Assistir* ela foi desligada.
+- **Botões que crescem com o foco cortados** na borda do Assistir (o microfone da busca, por exemplo).
+
 ## 1.2 (2026-11-02)
 
 ### Adicionado

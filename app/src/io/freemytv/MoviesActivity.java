@@ -61,32 +61,40 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
         root.addView(page, new FrameLayout.LayoutParams(MATCH, MATCH));
         // The home screen's pill, in the same place (Home goes back there): centered at the height of the home
         // screen's corner buttons (103 of 1080).
-        List<Object[]> names = new ArrayList<>();
         boolean lists = Iptv.get(this).connected();
-        names.add(new Object[] {Ui.tr("tab|Home"), T_HOME});
-        names.add(new Object[] {Ui.tr("Search"), T_SEARCH});   // your lists' movies, shows and channels (and TMDB's, with a key)
-        if (!Lite.on()) names.add(new Object[] {"Para você", T_EXPLORE});
-        names.add(new Object[] {Ui.tr("Live"), T_LIVE});
-        names.add(new Object[] {Ui.tr("Movies"), T_IPTV_MOVIES});
-        names.add(new Object[] {Ui.tr("Shows"), T_IPTV_SHOWS});
-        if (!Lite.on()) names.add(new Object[] {lists ? "Descobrir" : "Rankings", lists ? T_DISCOVER : T_RANKINGS});
-        names.add(new Object[] {Ui.tr("Settings"), T_PREFS});
         LinearLayout pill = ui.pill();
-        for (Object[] n : names) {
-            final int id = (Integer) n[1];
+        for (int id : NavTabs.ids(this)) {
             // The global focus listener below switches tabs (and redirects focus coming into the pill).
-            TvUi.Chip t = ui.tab((String) n[0], false);
+            TvUi.Chip t = ui.tab(NavTabs.label(id), false);
             tabs.add(t);
             tabIds.add(id);
             pill.addView(t, ui.margins(WRAP, WRAP, 0, 0, id == T_PREFS ? 0 : 4, 0));
         }
-        LinearLayout head = ui.row();
-        head.setGravity(Gravity.CENTER_HORIZONTAL);
-        head.addView(pill);
+        // The home screen's round buttons (Live TV, HDMI inputs, Settings) stay at the top right, one move past the
+        // last tab, so the pill and what's beside it are the same on both screens.
+        FrameLayout head = new FrameLayout(this);
+        head.setClipChildren(false);
+        head.addView(pill, new FrameLayout.LayoutParams(WRAP, WRAP, Gravity.CENTER_HORIZONTAL));
+        LinearLayout buttons = ui.row();
+        buttons.setGravity(Gravity.CENTER_VERTICAL);
+        buttons.setClipChildren(false);
+        List<HomeApps.Item> top = HomeApps.topButtons();
+        for (int i = 0; i < top.size(); i++) {
+            HomeApps.Item it = top.get(i);
+            View btn = ui.roundButton(it.symbol, it.label, null);
+            btn.setOnClickListener(v -> openTop(it, v));
+            if (i < top.size() - 1) ((LinearLayout.LayoutParams) btn.getLayoutParams()).rightMargin = ui.px(20);
+            buttons.addView(btn);
+        }
+        head.addView(buttons, new FrameLayout.LayoutParams(WRAP, WRAP, Gravity.END | Gravity.CENTER_VERTICAL));
         page.setPadding(ui.px(80), 0, ui.px(80), 0);
+        page.setClipToPadding(false);   // a focused button grows past the margin
+        page.setClipChildren(false);
         page.addView(head, ui.margins(MATCH, WRAP, 0, 63, 0, 18));
         getWindow().getDecorView().getViewTreeObserver().addOnGlobalFocusChangeListener(this::pillFocus);
         content = new FrameLayout(this);
+        content.setClipChildren(false);
+        content.setClipToPadding(false);
         page.addView(content, ui.margins(MATCH, 0, 0, 20, 0, 0));
         ((LinearLayout.LayoutParams) content.getLayoutParams()).weight = 1;
         setContentView(root);
@@ -187,6 +195,19 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
         handler.postDelayed(rebuildSoon, 220);
     }
 
+    /** A round button at the top right: Live TV and Settings open from here; the HDMI inputs list lives on the home screen. */
+    private void openTop(HomeApps.Item it, View from) {
+        if (it.kind == HomeApps.INPUTS) {
+            Lite.openInputs = true;
+            goHome();
+            return;
+        }
+        int[] at = new int[2];
+        from.getLocationOnScreen(at);
+        if (!HomeApps.open(this, it, from, at[0], at[1], from.getWidth(), from.getHeight()))
+            android.widget.Toast.makeText(this, Ui.trf("Couldn't open {app}.", "app", it.label), android.widget.Toast.LENGTH_SHORT).show();
+    }
+
     /** The home screen's pill opened another tab while this screen was kept: switch to it. */
     @Override protected void onNewIntent(android.content.Intent intent) {
         super.onNewIntent(intent);
@@ -194,7 +215,7 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
         int t = intent.getIntExtra("tab", tab);
         int at = tabIds.indexOf(t);
         if (at < 0 || t == T_HOME) return;
-        if (t != tab || showOpen) {
+        if (t != tab || t != builtTab || showOpen) {
             tab = -1;   // force the rebuild (and close a show's episodes)
             show(t);
         }
@@ -218,8 +239,12 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
         overridePendingTransition(0, 0);
     }
 
+    /** The tab whose content is on screen: `tab` runs ahead of it while a rebuild is pending (and it can be cancelled). */
+    private int builtTab = -2;
+
     private void rebuild() {
         showOpen = false;
+        builtTab = tab;
         content.removeAllViews();
         if (live != null) { live.destroy(); live = null; }
         View v;
@@ -1309,8 +1334,17 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
 
         Search() {
             box.setInputType(android.text.InputType.TYPE_CLASS_TEXT);
+            box.setId(View.generateViewId());
+            int at = tabIds.indexOf(T_SEARCH);
+            if (at >= 0) tabs.get(at).setNextFocusDownId(box.getId());   // down from the tab: the field, not the microphone
+            // The field takes the whole width and the microphone sits at the right edge, in line with the round buttons above.
             LinearLayout bar = ui.row();
-            bar.addView(box, ui.margins(ui.px(1100), ui.px(70), 0, 0, 0, 0));
+            bar.setGravity(Gravity.CENTER_VERTICAL);
+            bar.setClipChildren(false);   // the focused microphone grows past its box
+            view.setClipChildren(false);
+            box.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 28 * ui.k);
+            LinearLayout.LayoutParams boxLp = new LinearLayout.LayoutParams(0, ui.px(84), 1);
+            bar.addView(box, boxLp);
             search = this;
             MicView talk = new MicView(MoviesActivity.this, false);
             talk.restBg = ui.chip;
@@ -1319,8 +1353,8 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
             talk.focusInk = ui.chipOnText;
             talk.setContentDescription("Buscar por voz");
             talk.setOnClickListener(x -> listenNow());
-            bar.addView(talk, ui.margins(ui.px(70), ui.px(70), 18, 0, 0, 0));
-            view.addView(bar, ui.margins(WRAP, WRAP, 0, 6, 0, 18));
+            bar.addView(talk, ui.margins(ui.px(84), ui.px(84), 20, 0, 0, 0));
+            view.addView(bar, ui.margins(MATCH, WRAP, 12, 14, 0, 26));   // 12 on the left: the results below sit that far in, for their focus room
             box.addTextChangedListener(new android.text.TextWatcher() {
                 @Override public void beforeTextChanged(CharSequence c, int a, int b, int d) {}
                 @Override public void onTextChanged(CharSequence c, int a, int b, int d) {}
@@ -1336,7 +1370,28 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
             results.setClipChildren(false);
             sv.addView(results);
             view.addView(sv, new LinearLayout.LayoutParams(MATCH, 0, 1));
-            results.addView(ui.text("Aperte o microfone do controle e fale, ou OK no campo para digitar. Dá para pedir por nome (“Duna”, “Wagner Moura”, “SporTV”) ou por tipo: “filmes de suspense”, “séries de terror”, “comédia dos anos 90”, “ação brasileiro”, “lançamentos de ficção”, “documentários da Netflix”.", 21, Ui.medium, ui.dim));
+            hints();
+        }
+
+        /** Nothing typed yet: how to ask, with examples that search when you press OK. */
+        private void hints() {
+            results.addView(ui.text("Aperte o microfone do controle e fale, ou OK no campo para digitar.", 30, Ui.medium, ui.dim),
+                    ui.margins(WRAP, WRAP, 0, 0, 0, 10));
+            results.addView(ui.text("Dá para pedir por nome ou por tipo. Experimente:", 24, Ui.medium, ui.faint), ui.margins(WRAP, WRAP, 0, 0, 0, 30));
+            String[][] rows = {
+                {"Duna", "Wagner Moura", "SporTV", "Netflix"},
+                {"filmes de suspense", "séries de terror", "comédia dos anos 90"},
+                {"ação brasileiro", "lançamentos de ficção", "documentários da Netflix"}};
+            for (String[] row : rows) {
+                LinearLayout line = ui.row();
+                line.setClipChildren(false);
+                for (String a : row) {
+                    TvUi.Chip c = ui.new Chip(a, 27, false);
+                    c.setOnClickListener(v -> { box.setText(a); box.setSelection(a.length()); handler.removeCallbacks(run); run(); });
+                    line.addView(c, ui.margins(WRAP, WRAP, 0, 0, 18, 0));
+                }
+                results.addView(line, ui.margins(WRAP, WRAP, 0, 0, 0, 24));
+            }
         }
 
         void listenNow() {
@@ -1409,7 +1464,7 @@ public class MoviesActivity extends Activity implements Movies.Listener, Iptv.Li
             String q = box.getText().toString().trim();
             int gen = ++generation;
             results.removeAllViews();
-            if (q.length() < 2) return;
+            if (q.length() < 2) { hints(); return; }
             heardAlso(q, gen);
             // What the words mean decides the order: a channel group ("jogos de hoje"), a team ("Galo"), a channel's
             // name, or a title. Sections say what they are: Ao vivo agora, Filmes / Séries nas suas listas, Pessoas,

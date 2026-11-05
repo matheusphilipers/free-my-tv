@@ -20,6 +20,8 @@ final class Lite {
     static volatile boolean ON;
     /** Set when Assistir's pill hands the focus back to the home screen's Home tab. */
     static volatile boolean navBack;
+    /** Assistir's HDMI Inputs button: the home screen opens its inputs list when it comes back. */
+    static volatile boolean openInputs;
     private static volatile boolean ready;
 
     static void init(Context c) {

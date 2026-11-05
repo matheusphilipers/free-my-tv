@@ -9,4 +9,9 @@
         <item name="android:windowShowWallpaper">false</item>
         <item name="android:colorBackgroundCacheHint">@null</item>
     </style>
+
+    <!-- Assistir is dark at night and light by day: no starting window, which would show the light color first. -->
+    <style name="FreeMyTV.Assistir" parent="FreeMyTV.Home">
+        <item name="android:windowDisablePreview">true</item>
+    </style>
 </resources>

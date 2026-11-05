@@ -252,8 +252,9 @@ HDMI (Chromecast with Google TV, Google TV Streamer, onn 4K, NVIDIA Shield). Set
     and its hint fit the 1080 px; adding a row means checking both (an overflow crashed `drawRowBackground`).
 - Search: Assistir's *Buscar* also exists in light mode: it looks in the lists' categories (`Iptv.searchOne`, kept in
   light mode; the title index isn't) and the channels (`Lineup`), and skips the TMDB catalogue when `Lite.tmdbKey()` is
-  empty. The home screen's pill has six tabs (`NAV_COUNT`, `NAV_TAB`, `navLabels`) and the Assistir one must match its
-  labels. The remote's mic reaches the app only if Free My TV is the TV's assistant (`cmd role add-role-holder
+  empty. The tab pill is one list for both screens (`NavTabs`: ids, order and labels; light mode drops the
+  TMDB-only tabs), so the home screen's and Assistir's never differ. Assistir also draws the home screen's round buttons
+  (`TvUi.roundButton`, `MoviesActivity.openTop`; HDMI Inputs goes home and opens its list, `Lite.openInputs`). The remote's mic reaches the app only if Free My TV is the TV's assistant (`cmd role add-role-holder
   android.app.role.ASSISTANT io.freemytv`; a Chromecast's is `com.google.android.katniss`): that gives up "Ok Google".
 - LG and Samsung (`web/`): plain ES5 JavaScript and CSS without variables, grid or backdrop-filter, since older TVs
   (webOS 3 and 4, Tizen 3) run a Chromium from 2015 to 2017; only transform and opacity animate. `web/tv.js` is the

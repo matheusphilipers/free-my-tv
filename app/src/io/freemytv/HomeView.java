@@ -174,10 +174,12 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private final Spring[] topFocus = new Spring[3 + HomeApps.MAX_TOP];
     // The tab pill at the top center (Home, Search, Live, Movies, Shows, Settings), in line with the corner buttons.
     // Home is this screen; focusing another tab opens Assistir on it, which draws the same pill in the same place.
-    private static final int NAV_COUNT = 6;
-    private static final int[] NAV_TAB = {-1, MoviesActivity.T_SEARCH, MoviesActivity.T_LIVE, MoviesActivity.T_IPTV_MOVIES, MoviesActivity.T_IPTV_SHOWS, MoviesActivity.T_PREFS};
-    private final Spring[] navFocus = new Spring[NAV_COUNT];
-    private final RectF[] navRects = new RectF[NAV_COUNT];
+    // The tabs are NavTabs' (the same as Assistir's pill): Home first, then Assistir's tabs.
+    static final int NAV_PAD = 16;   // px of 1080, each side of a tab's text (Assistir's pill uses the same)
+    private int[] navIds = {MoviesActivity.T_HOME};
+    private int navCount = 1;
+    private final Spring[] navFocus = new Spring[NavTabs.MAX];
+    private final RectF[] navRects = new RectF[NavTabs.MAX];
     private final RectF navCapsule = new RectF();
     private int navIndex;
     private final Runnable openNav = this::openNav;
@@ -466,7 +468,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             topFocus[i] = new Spring(0.26f, 0.85f, 0);
             topRects[i] = new RectF();
         }
-        for (int i = 0; i < NAV_COUNT; i++) {
+        for (int i = 0; i < NavTabs.MAX; i++) {
             navFocus[i] = new Spring(0.26f, 0.85f, 0);
             navRects[i] = new RectF();
         }
@@ -3446,17 +3448,20 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         float b = L_BUTTON * k, right = CONTENT_R * k, cy = L_BUTTON_CY * k;
         if (navOn()) {
             // The pill's tabs, centered on the screen at the corner buttons' height.
+            navIds = NavTabs.ids(getContext());
+            navCount = navIds.length;
             String[] labels = navLabels();
             float total = 0;
-            for (String n : labels) total += Math.max(lTabOn.measureText(n), lTab.measureText(n)) + 2 * pad;
-            total += (NAV_COUNT - 1) * 4 * k;
+            float npad = NAV_PAD * k;   // tighter than the picks' tabs: eight tabs must clear the corner buttons
+            for (String n : labels) total += Math.max(lTabOn.measureText(n), lTab.measureText(n)) + 2 * npad;
+            total += (navCount - 1) * 4 * k;
             float nx = (w - total) / 2;
-            for (int i = 0; i < NAV_COUNT; i++) {
+            for (int i = 0; i < navCount; i++) {
                 float tw = Math.max(lTabOn.measureText(labels[i]), lTab.measureText(labels[i]));
-                navRects[i].set(nx, cy - b / 2, nx + tw + 2 * pad, cy + b / 2);
+                navRects[i].set(nx, cy - b / 2, nx + tw + 2 * npad, cy + b / 2);
                 nx = navRects[i].right + 4 * k;
             }
-            navCapsule.set(navRects[0].left - 6 * k, cy - b / 2 - 6 * k, navRects[NAV_COUNT - 1].right + 6 * k, cy + b / 2 + 6 * k);
+            navCapsule.set(navRects[0].left - 6 * k, cy - b / 2 - 6 * k, navRects[navCount - 1].right + 6 * k, cy + b / 2 + 6 * k);
         }
         for (int i = lightButtons.size() - 1; i >= 0; i--) {
             topRects[3 + i].set(right - b, cy - b / 2, right, cy + b / 2);
@@ -3674,8 +3679,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
      * The round buttons (Live TV, HDMI Inputs and Settings by default): icon-only glass circles (light by day, smoked at
      * night); the focused one turns white with a dark icon (the tvOS focus) and its name appears below it.
      */
-    private static String[] navLabels() {
-        return new String[] {Ui.tr("tab|Home"), Ui.tr("Search"), Ui.tr("Live"), Ui.tr("Movies"), Ui.tr("Shows"), Ui.tr("Settings")};
+    private String[] navLabels() {
+        String[] labels = new String[navIds.length];
+        for (int i = 0; i < labels.length; i++) labels[i] = NavTabs.label(navIds[i]);
+        return labels;
     }
 
     private String[] navText = new String[0];
@@ -3695,13 +3702,19 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         shadows.draw(c, tmp, rr, SHADOW_BLUR * k, shadow);
         scene.liquid(c, navCapsule, rr, tone(0xFFFFFFFF, SMOKE), tone(0.55f, 0.5f), tone(0.02f, 0.01f), 12 * k, 8 * k,
                 tone(0.6f, 0.45f), 1);
-        if (!Ui.language.equals(navLanguage) || navText.length != NAV_COUNT) {   // no allocations while drawing
+        if (!Ui.language.equals(navLanguage) || navText.length != navCount) {   // no allocations while drawing
             navText = navLabels();
             navLanguage = Ui.language;
         }
-        for (int i = 0; i < NAV_COUNT; i++) {
+        for (int i = 0; i < navCount; i++) {
             RectF r = navRects[i];
             float f = Ui.clamp(navFocus[i].value);
+            if (i == 0 && f < 0.99f) {   // where you are (Home) stays marked while the focus is elsewhere
+                float pr = r.height() / 2;
+                fill.setShader(null);
+                fill.setColor(Ui.alpha(tone(0xFF000000, 0xFFFFFFFF), tone(0.08f, 0.18f) * (1 - f)));
+                c.drawRoundRect(r, pr, pr, fill);
+            }
             if (f > 0.01f) {
                 float s = 1 + 0.05f * f;
                 cell.set(r.centerX() - r.width() * s / 2, r.centerY() - r.height() * s / 2,
@@ -3734,7 +3747,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         a.startActivity(new android.content.Intent(a, MoviesActivity.class)
                 .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK | android.content.Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
                         | android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                .putExtra("tab", NAV_TAB[navIndex]).putExtra("nav", true));
+                .putExtra("tab", navIds[navIndex]).putExtra("nav", true));
         a.overridePendingTransition(0, 0);
     }
 
@@ -3745,6 +3758,16 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (!navOn()) return;
         zone = Z_NAV;
         navIndex = 0;
+        if (Lite.openInputs) {
+            Lite.openInputs = false;
+            openDrawer();
+            for (int i = 0; i < drawerItems.size(); i++) {
+                if (drawerItems.get(i).kind == HomeApps.INPUT) {
+                    drawerIndex = i;
+                    break;
+                }
+            }
+        }
         retarget(true);
     }
 
@@ -3783,7 +3806,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (zone == Z_NAV) return moveNav(dx, dy);
         if (zone == Z_TOP && dx < 0 && topIndex == 3 && navOn()) {
             zone = Z_NAV;   // back along the row into the pill
-            navIndex = NAV_COUNT - 1;
+            navIndex = navCount - 1;
             handler.postDelayed(openNav, 250);
             retarget(false);
             click.move();
@@ -3855,7 +3878,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (dx != 0) {
             int next = navIndex + dx;
             if (next < 0) return true;
-            if (next >= NAV_COUNT) {
+            if (next >= navCount) {
                 if (lightButtons.isEmpty()) return true;
                 zone = Z_TOP;   // on along the row to the corner buttons
                 topIndex = 3;

@@ -168,7 +168,8 @@ final class TvUi {
         void paint() {
             boolean f = isFocused();
             if (tab) {
-                setBackground(f ? round(0xFFFFFFFF, getHeight() > 0 ? getHeight() / 2f : size * 1.15f * k) : null);
+                int fillColor = f ? 0xFFFFFFFF : on ? (dark ? 0x38FFFFFF : 0x14000000) : 0;   // selected: a soft fill, apart from the focus
+                setBackground(fillColor != 0 ? round(fillColor, getHeight() > 0 ? getHeight() / 2f : size * 1.15f * k) : null);
                 setTypeface(on ? Ui.semibold : Ui.medium);
                 setTextColor(f ? 0xFF1D1D1F : on ? ink : dim);
                 setTranslationZ(f ? 1 : 0);
@@ -189,11 +190,42 @@ final class TvUi {
     /** A tab of the pill at the top (light mode): the same size and place as the home screen's. */
     Chip tab(String label, boolean on) {
         Chip t = new Chip(label, 30, on);
-        t.setPadding(px(26), 0, px(26), 0);
+        t.setPadding(px(HomeView.NAV_PAD), 0, px(HomeView.NAV_PAD), 0);
         t.setHeight(px(68));
         t.tab = true;
         t.paint();
         return t;
+    }
+
+    /** A round button at the top right (the home screen's): glass at rest, white and a little bigger when focused. */
+    View roundButton(String symbol, String label, Runnable click) {
+        final int size = px(68);
+        View v = new View(c) {
+            private final android.graphics.Paint p = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+            @Override protected void onDraw(android.graphics.Canvas cv) {
+                boolean f = isFocused();
+                p.setStyle(android.graphics.Paint.Style.FILL);
+                float cx = getWidth() / 2f, cy = getHeight() / 2f, r = size / 2f;
+                p.setColor(f ? 0xFFFFFFFF : dark ? 0x2EFFFFFF : 0xA6FFFFFF);
+                cv.drawCircle(cx, cy, r, p);
+                p.setStyle(android.graphics.Paint.Style.STROKE);
+                p.setStrokeWidth(px(1.5f));
+                p.setColor(dark ? 0x1FFFFFFF : 0xE6FFFFFF);
+                if (!f) cv.drawCircle(cx, cy, r - px(1), p);
+                Symbols.draw(c, cv, symbol, cx, cy, 27 * k, f ? 0xFF1D1D1F : dark ? 0xEBFFFFFF : 0xFF1D1D1F);
+            }
+        };
+        v.setFocusable(true);
+        v.setClickable(true);
+        v.setContentDescription(label);
+        v.setOnClickListener(x -> { if (click != null) click.run(); });
+        v.setOnFocusChangeListener((x, f) -> {
+            x.invalidate();
+            x.setTranslationZ(f ? 1 : 0);
+            x.animate().scaleX(f ? 1.1f : 1f).scaleY(f ? 1.1f : 1f).setDuration(120).start();
+        });
+        v.setLayoutParams(new LinearLayout.LayoutParams(size, size));
+        return v;
     }
 
     /** The glass capsule that holds the pill's tabs. */
